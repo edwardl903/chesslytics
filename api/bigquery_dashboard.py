@@ -22,8 +22,10 @@ class BigQueryDashboardManager:
         """Initialize BigQuery and Looker Studio integration"""
         self.project_id = "crucial-decoder-462021-m4"  # Match the project where data is uploaded
         self.dataset_id = "test1"  # Match the dataset where data is uploaded
-        self.games_table = "megachessdataset"  # Match the exact table where data is uploaded
-        self.stats_table = "user_statistics"
+        # NOTE: `games_table` is the legacy "everything flat" table read by
+        # dashboard_top_picks-style queries. New writes all go to `raw_games`
+        # (see _ensure_raw_games_table_exists / upload_raw_games).
+        self.games_table = "megachessdataset"
         
         # Initialize BigQuery client
         self.client = self._get_bigquery_client()
@@ -70,126 +72,249 @@ class BigQueryDashboardManager:
             dataset = self.client.create_dataset(dataset)
             logger.info(f"Created dataset: {self.dataset_id}")
     
-    def _ensure_tables_exist(self):
-        """Ensure BigQuery tables exist with proper schema"""
+    def _ensure_raw_games_table_exists(self):
+        """Ensure raw games table exists with schema matching Chess.com API response"""
         self._ensure_dataset_exists()
         
-        # Games table schema
-        games_schema = [
-            bigquery.SchemaField("username", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("game_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("time_control", "STRING"),
-            bigquery.SchemaField("result", "STRING"),
-            bigquery.SchemaField("rating", "INTEGER"),
-            bigquery.SchemaField("opponent_rating", "INTEGER"),
-            bigquery.SchemaField("opening", "STRING"),
-            bigquery.SchemaField("moves", "STRING"),
-            bigquery.SchemaField("game_duration", "INTEGER"),  # in seconds
-            bigquery.SchemaField("color", "STRING"),
-            bigquery.SchemaField("platform", "STRING", default_value_expression="'lichess'"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", default_value_expression="CURRENT_TIMESTAMP()")
+        # Raw games table schema - matches Chess.com API response structure
+        # This is RAW data exactly as returned from the API (with nested objects flattened)
+        raw_games_schema = [
+            # Game identifiers (from API root level)
+            bigquery.SchemaField("uuid", "STRING", mode="REQUIRED"),  # Primary key
+            bigquery.SchemaField("url", "STRING"),
+            bigquery.SchemaField("tcn", "STRING"),
+            
+            # Game metadata (from API root level)
+            bigquery.SchemaField("pgn", "STRING"),  # Full PGN - raw from API
+            bigquery.SchemaField("time_control", "STRING"),  # Raw format from API (e.g., "600")
+            bigquery.SchemaField("end_time", "INTEGER"),  # Unix timestamp from API
+            bigquery.SchemaField("rated", "BOOLEAN"),
+            bigquery.SchemaField("time_class", "STRING"),  # blitz/rapid/bullet/daily
+            bigquery.SchemaField("rules", "STRING"),
+            bigquery.SchemaField("fen", "STRING"),  # Final position FEN
+            bigquery.SchemaField("initial_setup", "STRING"),  # Initial board setup FEN
+            
+            # White player (flattened from nested "white" object)
+            bigquery.SchemaField("white_username", "STRING"),
+            bigquery.SchemaField("white_rating", "INTEGER"),
+            bigquery.SchemaField("white_result", "STRING"),
+            bigquery.SchemaField("white_uuid", "STRING"),
+            
+            # Black player (flattened from nested "black" object)
+            bigquery.SchemaField("black_username", "STRING"),
+            bigquery.SchemaField("black_rating", "INTEGER"),
+            bigquery.SchemaField("black_result", "STRING"),
+            bigquery.SchemaField("black_uuid", "STRING"),
+            
+            # Accuracies (flattened from nested "accuracies" object - optional)
+            bigquery.SchemaField("white_accuracy", "FLOAT"),
+            bigquery.SchemaField("black_accuracy", "FLOAT"),
+            
+            # Load metadata
+            bigquery.SchemaField("uploaded_at", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("loaded_by_user", "STRING"),  # Username who triggered the load
         ]
         
-        # Statistics table schema
-        stats_schema = [
-            bigquery.SchemaField("username", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
-            bigquery.SchemaField("total_games", "INTEGER"),
-            bigquery.SchemaField("wins", "INTEGER"),
-            bigquery.SchemaField("losses", "INTEGER"),
-            bigquery.SchemaField("draws", "INTEGER"),
-            bigquery.SchemaField("current_rating", "INTEGER"),
-            bigquery.SchemaField("highest_rating", "INTEGER"),
-            bigquery.SchemaField("lowest_rating", "INTEGER"),
-            bigquery.SchemaField("favorite_opening", "STRING"),
-            bigquery.SchemaField("total_time_spent", "INTEGER"),  # in minutes
-            bigquery.SchemaField("biggest_win", "STRING"),
-            bigquery.SchemaField("biggest_loss", "STRING"),
-            bigquery.SchemaField("created_at", "TIMESTAMP", default_value_expression="CURRENT_TIMESTAMP()")
-        ]
-        
-        # Create tables if they don't exist
-        for table_name, schema in [(self.games_table, games_schema), (self.stats_table, stats_schema)]:
-            table_ref = self.client.dataset(self.dataset_id).table(table_name)
-            try:
-                self.client.get_table(table_ref)
-                logger.info(f"Table {table_name} exists")
-            except NotFound:
-                table = bigquery.Table(table_ref, schema=schema)
-                self.client.create_table(table)
-                logger.info(f"Created table: {table_name}")
-    
-    def upload_user_games(self, username: str, games_data: List[Dict[str, Any]]):
-        """Upload user's games to BigQuery"""
+        table_ref = self.client.dataset(self.dataset_id).table("raw_games")
         try:
-            self._ensure_tables_exist()
+            self.client.get_table(table_ref)
+            logger.info(f"Table raw_games exists")
+        except NotFound:
+            table = bigquery.Table(table_ref, schema=raw_games_schema)
+            self.client.create_table(table)
+            logger.info(f"Created table: raw_games")
+    
+    def flatten_raw_game(self, game: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten a raw Chess.com API game response for BigQuery storage.
+        Flattens nested objects (white, black, accuracies) to top-level fields.
+        
+        Args:
+            game: Raw game dictionary from Chess.com API
             
-            if not games_data:
-                logger.warning(f"No games data for user {username}")
-                return
+        Returns:
+            Flattened game dictionary ready for BigQuery
+        """
+        flattened = {
+            # Root level fields
+            "uuid": game.get("uuid"),
+            "url": game.get("url"),
+            "tcn": game.get("tcn"),
+            "pgn": game.get("pgn"),
+            "time_control": game.get("time_control"),
+            "end_time": game.get("end_time"),
+            "rated": game.get("rated"),
+            "time_class": game.get("time_class"),
+            "rules": game.get("rules"),
+            "fen": game.get("fen"),
+            "initial_setup": game.get("initial_setup"),
             
-            # Convert games data to DataFrame
-            df = pd.DataFrame(games_data)
+            # Flatten white player object
+            "white_username": game.get("white", {}).get("username"),
+            "white_rating": game.get("white", {}).get("rating"),
+            "white_result": game.get("white", {}).get("result"),
+            "white_uuid": game.get("white", {}).get("uuid"),
             
-            # Add username and created_at columns
-            df['username'] = username
-            df['created_at'] = datetime.now()
+            # Flatten black player object
+            "black_username": game.get("black", {}).get("username"),
+            "black_rating": game.get("black", {}).get("rating"),
+            "black_result": game.get("black", {}).get("result"),
+            "black_uuid": game.get("black", {}).get("uuid"),
             
-            # Upload to BigQuery - don't specify schema, let BigQuery use table's schema
-            table_ref = self.client.dataset(self.dataset_id).table(self.games_table)
-            
-            job_config = bigquery.LoadJobConfig(
-                write_disposition="WRITE_APPEND"
-                # Remove schema specification to use table's existing schema
+            # Flatten accuracies object (optional field)
+            "white_accuracy": game.get("accuracies", {}).get("white"),
+            "black_accuracy": game.get("accuracies", {}).get("black"),
+        }
+        
+        return flattened
+    
+    # ------------------------------------------------------------------
+    # Incremental-fetch helpers
+    # ------------------------------------------------------------------
+    # These let callers (tests/testing.py) skip re-fetching and re-uploading
+    # games that BigQuery already has, and instead only pull months that
+    # might contain new data.
+    #
+    # Filter is on actual player name (white_username/black_username), not
+    # `loaded_by_user`, so games uploaded under a different user's session
+    # are still correctly recognized as "already in BigQuery for this user".
+    # ------------------------------------------------------------------
+
+    def get_max_end_time(self, username: str) -> Optional[int]:
+        """
+        Return the Unix end_time of the most recent game in raw_games for
+        this user, or None if BigQuery has no games for the user.
+
+        Used to compute a "high-water mark" so we only re-fetch months
+        from that point forward.
+        """
+        try:
+            query = f"""
+                SELECT MAX(end_time) AS max_end_time
+                FROM `{self.project_id}.{self.dataset_id}.raw_games`
+                WHERE LOWER(white_username) = LOWER(@username)
+                   OR LOWER(black_username) = LOWER(@username)
+            """
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("username", "STRING", username)]
             )
-            
+            row = next(iter(self.client.query(query, job_config=job_config).result()), None)
+            return int(row.max_end_time) if row and row.max_end_time is not None else None
+        except NotFound:
+            # raw_games table doesn't exist yet — first run ever
+            return None
+        except Exception as e:
+            logger.warning(f"get_max_end_time failed for {username}: {e}. Assuming no prior data.")
+            return None
+
+    def get_existing_uuids(self, username: str, since_end_time: Optional[int] = None) -> set:
+        """
+        Return the set of game UUIDs already in raw_games for this user.
+
+        Args:
+            username: Chess.com username (case-insensitive match on either color).
+            since_end_time: If provided, only consider games with end_time >= this
+                Unix timestamp. Use this to limit the scan when you only need to
+                dedupe against recent uploads.
+        """
+        try:
+            params = [bigquery.ScalarQueryParameter("username", "STRING", username)]
+            since_clause = ""
+            if since_end_time is not None:
+                since_clause = "AND end_time >= @since_end_time"
+                params.append(bigquery.ScalarQueryParameter("since_end_time", "INT64", since_end_time))
+
+            query = f"""
+                SELECT DISTINCT uuid
+                FROM `{self.project_id}.{self.dataset_id}.raw_games`
+                WHERE (LOWER(white_username) = LOWER(@username)
+                       OR LOWER(black_username) = LOWER(@username))
+                      {since_clause}
+            """
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
+            return {row.uuid for row in self.client.query(query, job_config=job_config).result()}
+        except NotFound:
+            return set()
+        except Exception as e:
+            logger.warning(f"get_existing_uuids failed for {username}: {e}. Assuming no prior data.")
+            return set()
+
+    def upload_raw_games(self, username: str, raw_games_data: List[Dict[str, Any]]):
+        """
+        Upload RAW game data to BigQuery source table (before transformations).
+        Accepts raw Chess.com API response format and flattens nested objects.
+        This data will be transformed by dbt intermediate models.
+
+        Deduplicates against UUIDs already in raw_games for this user before
+        uploading, so the table never grows duplicate rows for the same game.
+
+        Args:
+            username: Chess.com username who triggered the load
+            raw_games_data: List of raw game dictionaries from Chess.com API response
+                          (from the "games" array in the API response)
+        """
+        try:
+            self._ensure_raw_games_table_exists()
+
+            if not raw_games_data:
+                logger.warning(f"No raw games data for user {username}")
+                return
+
+            # Flatten nested objects for BigQuery storage
+            flattened_games = [self.flatten_raw_game(game) for game in raw_games_data]
+            df = pd.DataFrame(flattened_games)
+
+            # Add load metadata
+            df['uploaded_at'] = datetime.now()
+            df['loaded_by_user'] = username
+
+            # Ensure uuid is present (required field). Drop rows with missing UUIDs.
+            if 'uuid' not in df.columns:
+                raise ValueError("UUID field is required for raw_games table")
+            df = df.dropna(subset=['uuid'])
+
+            if df.empty:
+                logger.warning(f"No valid games to upload for user {username}")
+                return
+
+            # Dedupe against BigQuery: skip UUIDs we've already uploaded for this user.
+            # Scan only the recent window we're actually uploading (cheaper than full scan).
+            min_end_time = int(df['end_time'].dropna().min()) if 'end_time' in df.columns and not df['end_time'].dropna().empty else None
+            existing_uuids = self.get_existing_uuids(username, since_end_time=min_end_time)
+            if existing_uuids:
+                before = len(df)
+                df = df[~df['uuid'].isin(existing_uuids)]
+                skipped = before - len(df)
+                if skipped:
+                    logger.info(f"Skipped {skipped} games already in raw_games for {username}")
+
+            if df.empty:
+                logger.info(f"All {len(raw_games_data)} games for {username} already in BigQuery; nothing to upload.")
+                return
+
+            # Append the new rows.
+            table_ref = self.client.dataset(self.dataset_id).table("raw_games")
+            job_config = bigquery.LoadJobConfig(
+                write_disposition="WRITE_APPEND",
+                schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION]
+            )
             load_job = self.client.load_table_from_dataframe(df, table_ref, job_config=job_config)
             load_job.result()
-            
-            logger.info(f"Successfully uploaded {len(games_data)} games for user {username}")
-            
+
+            logger.info(f"Successfully uploaded {len(df)} new raw games for user {username}")
+
         except Exception as e:
-            logger.error(f"Failed to upload games for user {username}: {e}")
+            logger.error(f"Failed to upload raw games for user {username}: {e}")
             raise
     
-    def upload_user_statistics(self, username: str, stats_data: Dict[str, Any]):
-        """Upload user's statistics to BigQuery"""
-        try:
-            self._ensure_tables_exist()
-            
-            # Convert stats to DataFrame
-            stats_row = {
-                'username': username,
-                'date': datetime.now().date(),
-                'total_games': stats_data.get('total_games', 0),
-                'wins': stats_data.get('wins', 0),
-                'losses': stats_data.get('losses', 0),
-                'draws': stats_data.get('draws', 0),
-                'current_rating': stats_data.get('current_rating', 0),
-                'highest_rating': stats_data.get('highest_rating', 0),
-                'lowest_rating': stats_data.get('lowest_rating', 0),
-                'favorite_opening': stats_data.get('favorite_opening', ''),
-                'total_time_spent': stats_data.get('total_time_spent', {}).get('total_minutes', 0),
-                'biggest_win': stats_data.get('biggest_win', ''),
-                'biggest_loss': stats_data.get('biggest_loss', ''),
-                'created_at': datetime.now()
-            }
-            
-            df = pd.DataFrame([stats_row])
-            
-            # Upload to BigQuery
-            table_ref = self.client.dataset(self.dataset_id).table(self.stats_table)
-            
-            job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
-            load_job = self.client.load_table_from_dataframe(df, table_ref, job_config=job_config)
-            load_job.result()
-            
-            logger.info(f"Successfully uploaded statistics for user {username}")
-            
-        except Exception as e:
-            logger.error(f"Failed to upload statistics for user {username}: {e}")
-            raise
+    # NOTE: upload_user_games, upload_user_statistics, _ensure_tables_exist
+    # and get_user_data_from_bigquery were removed in May 2026. They wrote
+    # to a `user_statistics` table that was read from nowhere, and the
+    # `upload_user_games` alias accepted already-flattened CSV rows where
+    # `upload_raw_games` (its target) expects nested Chess.com API responses
+    # — silently corrupting data on every request. Raw uploads now go
+    # exclusively through `upload_raw_games`, called from
+    # `tests/testing.py` with the actual Chess.com API payload.
     
     def generate_personalized_dashboard_url(self, username: str, year: str = None) -> str:
         """Generate a personalized Looker Studio dashboard URL for the user"""
@@ -223,38 +348,6 @@ class BigQueryDashboardManager:
         # Create a hash based on username and current date
         data = f"{username}_{datetime.now().strftime('%Y-%m-%d')}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
-    
-    def get_user_data_from_bigquery(self, username: str) -> Dict[str, Any]:
-        """Retrieve user data from BigQuery for dashboard generation"""
-        try:
-            # Query user's games
-            games_query = f"""
-            SELECT * FROM `{self.project_id}.{self.dataset_id}.{self.games_table}`
-            WHERE username = '{username}'
-            ORDER BY date DESC
-            LIMIT 1000
-            """
-            
-            games_df = self.client.query(games_query).to_dataframe()
-            
-            # Query user's latest statistics
-            stats_query = f"""
-            SELECT * FROM `{self.project_id}.{self.dataset_id}.{self.stats_table}`
-            WHERE username = '{username}'
-            ORDER BY date DESC
-            LIMIT 1
-            """
-            
-            stats_df = self.client.query(stats_query).to_dataframe()
-            
-            return {
-                'games': games_df.to_dict('records') if not games_df.empty else [],
-                'statistics': stats_df.to_dict('records')[0] if not stats_df.empty else {}
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve data for user {username}: {e}")
-            return {'games': [], 'statistics': {}}
     
     def create_user_specific_dashboard_url(self, username: str, year: str = None) -> str:
         """Create a user-specific dashboard URL using a single dynamic view"""

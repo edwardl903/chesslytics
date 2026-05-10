@@ -1,0 +1,15 @@
+{
+  "name": "chesslytics",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Root build orchestrator for the Chesslytics monorepo. The Heroku Node buildpack uses heroku-postbuild to build the React frontend; the Python buildpack then installs the Flask backend that serves the resulting bundle from frontend/dist.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "heroku-postbuild": "cd frontend && npm install && npm run build",
+    "build": "cd frontend && npm install && npm run build",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "python3 app.py"
+  }
+}

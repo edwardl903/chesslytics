@@ -1,0 +1,1557 @@
+
+/* ------------------------
+   Global and Base Styles
+------------------------- */
+:root {
+    /* Fixed bar + wrapped links on mid widths; keep hero art fully below the bar */
+    --site-nav-offset: calc(152px + env(safe-area-inset-top, 0px));
+    --section-gap-major: 72px;
+}
+
+html {
+    scroll-padding-top: var(--site-nav-offset);
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    overflow-x: hidden;
+    font-family: 'League Spartan', sans-serif;
+    background-color: #2D6056;
+    background-image: url('/static/background.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-blend-mode: multiply; /* darker result: fixes the color blending problem */
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M8 20 L24 20 L24 24 L8 24 Z" fill="%23EEEED5"/><path d="M10 18 L22 18 L22 20 L10 20 Z" fill="%23EEEED5"/><path d="M12 16 L20 16 L20 18 L12 18 Z" fill="%23EEEED5"/><path d="M14 14 L18 14 L18 16 L14 16 Z" fill="%23EEEED5"/><path d="M16 12 L16 14 L14 14 L14 16 L12 16 L12 18 L10 18 L10 20 L8 20 L8 24 L24 24 L24 20 L22 20 L22 18 L20 18 L20 16 L18 16 L18 14 L16 14 Z" stroke="%23EEEED5" stroke-width="1.5" fill="none"/><path d="M16 8 L16 12" stroke="%23EEEED5" stroke-width="2" stroke-linecap="round"/><path d="M14 6 L18 6 L18 8 L14 8 Z" fill="%23EEEED5"/><path d="M15 4 L17 4 L17 6 L15 6 Z" fill="%23EEEED5"/><circle cx="13" cy="15" r="1.2" fill="%232D6056"/><circle cx="19" cy="15" r="1.2" fill="%232D6056"/><circle cx="16" cy="17" r="1.2" fill="%232D6056"/></svg>') 16 16, auto;
+}
+
+/* Chess-themed cursor for interactive elements */
+button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #loadDashboardBtn {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M8 20 L24 20 L24 24 L8 24 Z" fill="%2343e97b"/><path d="M10 18 L22 18 L22 20 L10 20 Z" fill="%2343e97b"/><path d="M12 16 L20 16 L20 18 L12 18 Z" fill="%2343e97b"/><path d="M14 14 L18 14 L18 16 L14 16 Z" fill="%2343e97b"/><path d="M16 12 L16 14 L14 14 L14 16 L12 16 L12 18 L10 18 L10 20 L8 20 L8 24 L24 24 L24 20 L22 20 L22 18 L20 18 L20 16 L18 16 L18 14 L16 14 Z" stroke="%2343e97b" stroke-width="2" fill="none"/><path d="M16 8 L16 12" stroke="%2343e97b" stroke-width="2.5" stroke-linecap="round"/><path d="M14 6 L18 6 L18 8 L14 8 Z" fill="%2343e97b"/><path d="M15 4 L17 4 L17 6 L15 6 Z" fill="%2343e97b"/><circle cx="13" cy="15" r="1.5" fill="%232D6056"/><circle cx="19" cy="15" r="1.5" fill="%232D6056"/><circle cx="16" cy="17" r="1.5" fill="%232D6056"/><path d="M16 2 L16 4" stroke="%2343e97b" stroke-width="2" stroke-linecap="round"/></svg>') 16 16, pointer;
+}
+
+/* Special cursor for the main generate button */
+.cta-button {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36" fill="none"><path d="M9 22 L27 22 L27 27 L9 27 Z" fill="%2343e97b"/><path d="M11 20 L25 20 L25 22 L11 22 Z" fill="%2343e97b"/><path d="M13 18 L23 18 L23 20 L13 20 Z" fill="%2343e97b"/><path d="M15 16 L21 16 L21 18 L15 18 Z" fill="%2343e97b"/><path d="M18 14 L18 16 L15 16 L15 18 L13 18 L13 20 L11 20 L11 22 L9 22 L9 27 L27 27 L27 22 L25 22 L25 20 L23 20 L23 18 L21 18 L21 16 L18 16 Z" stroke="%2343e97b" stroke-width="2.5" fill="none"/><path d="M18 10 L18 14" stroke="%2343e97b" stroke-width="3" stroke-linecap="round"/><path d="M16 8 L20 8 L20 10 L16 10 Z" fill="%2343e97b"/><path d="M17 6 L19 6 L19 8 L17 8 Z" fill="%2343e97b"/><circle cx="15" cy="17" r="1.8" fill="%232D6056"/><circle cx="21" cy="17" r="1.8" fill="%232D6056"/><circle cx="18" cy="19" r="1.8" fill="%232D6056"/><path d="M18 4 L18 6" stroke="%2343e97b" stroke-width="2.5" stroke-linecap="round"/><path d="M18 2 L18 4" stroke="%2343e97b" stroke-width="2" stroke-linecap="round"/></svg>') 18 18, pointer;
+}
+
+/* Cursor trail effect */
+.cursor-trail {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    background: radial-gradient(circle, rgba(67, 233, 123, 0.9) 0%, rgba(67, 233, 123, 0.6) 50%, transparent 100%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9999;
+    animation: trailFade 2.5s ease-out forwards;
+}
+
+@keyframes trailFade {
+    0% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+    20% {
+        opacity: 0.8;
+        transform: scale(1);
+    }
+    60% {
+        opacity: 0.4;
+        transform: scale(0.8);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.2);
+    }
+}
+
+/* Checkmate trail elements */
+.checkmate-trail {
+    position: fixed;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+    z-index: 9998;
+    animation: checkmateTrailFade 3s ease-out forwards;
+}
+
+@keyframes checkmateTrailFade {
+    0% {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+    }
+    30% {
+        opacity: 0.8;
+        transform: scale(1.2) rotate(90deg);
+    }
+    70% {
+        opacity: 0.3;
+        transform: scale(0.8) rotate(270deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.3) rotate(360deg);
+    }
+}
+
+/* Checkmate symbols */
+.checkmate-king {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 10 L8 10 L8 11 L4 11 Z" fill="%23FF4444"/><path d="M5 9 L7 9 L7 10 L5 10 Z" fill="%23FF4444"/><path d="M5 8 L7 8 L7 9 L5 9 Z" fill="%23FF4444"/><path d="M6 7 L6 8 L5 8 L5 9 L4 9 L4 10 L4 11 L8 11 L8 10 L7 10 L7 9 L6 9 L6 8 Z" stroke="%23FF4444" stroke-width="0.5" fill="none"/><circle cx="5" cy="8" r="0.4" fill="%23FFFFFF"/><circle cx="7" cy="8" r="0.4" fill="%23FFFFFF"/><circle cx="6" cy="9" r="0.4" fill="%23FFFFFF"/></svg>') no-repeat center;
+}
+
+.checkmate-crown {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 8 L10 8 L10 9 L2 9 Z" fill="%23FFD700"/><path d="M3 7 L9 7 L9 8 L3 8 Z" fill="%23FFD700"/><path d="M4 6 L8 6 L8 7 L4 7 Z" fill="%23FFD700"/><path d="M5 5 L7 5 L7 6 L5 6 Z" fill="%23FFD700"/><path d="M6 4 L6 5 L5 5 L5 6 L4 6 L4 7 L3 7 L3 8 L2 8 L2 9 L10 9 L10 8 L9 8 L9 7 L8 7 L8 6 L7 6 L7 5 L6 5 Z" stroke="%23FFD700" stroke-width="0.5" fill="none"/><circle cx="5" cy="6" r="0.3" fill="%23FFFFFF"/><circle cx="7" cy="6" r="0.3" fill="%23FFFFFF"/><circle cx="6" cy="7" r="0.3" fill="%23FFFFFF"/></svg>') no-repeat center;
+}
+
+.checkmate-sword {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2 L6 10" stroke="%23C0C0C0" stroke-width="1" stroke-linecap="round"/><path d="M5 3 L7 3 L7 4 L5 4 Z" fill="%23FFD700"/><path d="M6 1 L6 2" stroke="%23C0C0C0" stroke-width="1.5" stroke-linecap="round"/><path d="M5 9 L7 9 L7 10 L5 10 Z" fill="%23C0C0C0"/></svg>') no-repeat center;
+}
+
+.checkmate-star {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1 L7 4 L10 4 L7.5 6 L8.5 9 L6 7 L3.5 9 L4.5 6 L2 4 L5 4 Z" fill="%23FFD700"/></svg>') no-repeat center;
+}
+
+/* Click effect */
+.click-effect {
+    position: fixed;
+    width: 20px;
+    height: 20px;
+    background: radial-gradient(circle, rgba(67, 233, 123, 1) 0%, rgba(67, 233, 123, 0.6) 50%, transparent 100%);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 10000;
+    animation: clickRipple 0.6s ease-out forwards;
+}
+
+@keyframes clickRipple {
+    0% {
+        opacity: 1;
+        transform: scale(0.5);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.5);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(2.5);
+    }
+}
+
+/* Chess piece click effects */
+.chess-piece-click {
+    position: fixed;
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+    z-index: 10001;
+    animation: chessPieceEmit 1.2s ease-out forwards;
+}
+
+@keyframes chessPieceEmit {
+    0% {
+        opacity: 1;
+        transform: scale(0.3) translateY(0px);
+    }
+    30% {
+        opacity: 1;
+        transform: scale(1.2) translateY(-20px);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.8) translateY(-40px);
+    }
+}
+
+/* Individual chess piece styles */
+.chess-king {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%2343e97b"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%2343e97b"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%2343e97b"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%2343e97b"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%2343e97b" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%2343e97b" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%2343e97b"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%2343e97b"/><path d="M9 4 L15 4 L15 6 L9 6 Z" fill="%2343e97b"/><circle cx="10" cy="15" r="0.8" fill="%232D6056"/><circle cx="14" cy="15" r="0.8" fill="%232D6056"/><circle cx="12" cy="17" r="0.8" fill="%232D6056"/><path d="M12 2 L12 4" stroke="%2343e97b" stroke-width="1.5" stroke-linecap="round"/></svg>') no-repeat center;
+}
+
+.chess-queen {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%23EEEED5"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%23EEEED5"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%23EEEED5"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%23EEEED5"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%23EEEED5" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%23EEEED5" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%23EEEED5"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%23EEEED5"/><path d="M9 4 L15 4 L15 6 L9 6 Z" fill="%23EEEED5"/><circle cx="10" cy="15" r="0.8" fill="%232D6056"/><circle cx="14" cy="15" r="0.8" fill="%232D6056"/><circle cx="12" cy="17" r="0.8" fill="%232D6056"/><path d="M12 2 L12 4" stroke="%23EEEED5" stroke-width="1.5" stroke-linecap="round"/><path d="M10 0 L14 0 L14 2 L10 2 Z" fill="%23EEEED5"/></svg>') no-repeat center;
+}
+
+.chess-bishop {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%23FFD700"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%23FFD700"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%23FFD700"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%23FFD700"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%23FFD700" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%23FFD700" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%23FFD700"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%23FFD700"/><path d="M11 4 L13 4 L13 6 L11 6 Z" fill="%23FFD700"/><circle cx="12" cy="17" r="0.8" fill="%232D6056"/><path d="M12 2 L12 4" stroke="%23FFD700" stroke-width="1.5" stroke-linecap="round"/></svg>') no-repeat center;
+}
+
+.chess-knight {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%23FF6B6B"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%23FF6B6B"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%23FF6B6B"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%23FF6B6B"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%23FF6B6B" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%23FF6B6B" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%23FF6B6B"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%23FF6B6B"/><path d="M11 4 L13 4 L13 6 L11 6 Z" fill="%23FF6B6B"/><circle cx="11" cy="15" r="0.8" fill="%232D6056"/><circle cx="13" cy="15" r="0.8" fill="%232D6056"/><path d="M12 2 L12 4" stroke="%23FF6B6B" stroke-width="1.5" stroke-linecap="round"/></svg>') no-repeat center;
+}
+
+.chess-rook {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%23A8E6CF"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%23A8E6CF"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%23A8E6CF"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%23A8E6CF"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%23A8E6CF" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%23A8E6CF" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%23A8E6CF"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%23A8E6CF"/><path d="M9 4 L15 4 L15 6 L9 6 Z" fill="%23A8E6CF"/><path d="M8 2 L16 2 L16 4 L8 4 Z" fill="%23A8E6CF"/><path d="M9 0 L15 0 L15 2 L9 2 Z" fill="%23A8E6CF"/></svg>') no-repeat center;
+}
+
+.chess-pawn {
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M8 20 L16 20 L16 22 L8 22 Z" fill="%23DDA0DD"/><path d="M9 18 L15 18 L15 20 L9 20 Z" fill="%23DDA0DD"/><path d="M10 16 L14 16 L14 18 L10 18 Z" fill="%23DDA0DD"/><path d="M11 14 L13 14 L13 16 L11 16 Z" fill="%23DDA0DD"/><path d="M12 12 L12 14 L11 14 L11 16 L10 16 L10 18 L9 18 L9 20 L8 20 L8 22 L16 22 L16 20 L15 20 L15 18 L14 18 L14 16 L13 16 L13 14 L12 14 Z" stroke="%23DDA0DD" stroke-width="1" fill="none"/><path d="M12 10 L12 12" stroke="%23DDA0DD" stroke-width="1.5" stroke-linecap="round"/><path d="M11 8 L13 8 L13 10 L11 10 Z" fill="%23DDA0DD"/><path d="M10 6 L14 6 L14 8 L10 8 Z" fill="%23DDA0DD"/><circle cx="12" cy="17" r="1" fill="%232D6056"/></svg>') no-repeat center;
+}
+
+/* Knight trail effect */
+.knight-trail {
+    position: fixed;
+    width: 16px;
+    height: 16px;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 10 L12 10 L12 12 L4 12 Z" fill="%2343e97b" opacity="0.6"/><path d="M5 9 L11 9 L11 10 L5 10 Z" fill="%2343e97b" opacity="0.4"/><path d="M6 8 L10 8 L10 9 L6 9 Z" fill="%2343e97b" opacity="0.3"/><path d="M7 7 L9 7 L9 8 L7 8 Z" fill="%2343e97b" opacity="0.2"/></svg>') no-repeat center;
+    pointer-events: none;
+    z-index: 9998;
+    animation: knightTrailFade 1.2s ease-out forwards;
+}
+
+@keyframes knightTrailFade {
+    0% {
+        opacity: 0.8;
+        transform: scale(1) rotate(0deg);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.8) rotate(180deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(0.3) rotate(360deg);
+    }
+}
+
+#background, #overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -2;
+    pointer-events: none;
+}
+
+#overlay {
+    background: rgba(0, 0, 0, 0.5);
+    z-index: -1;
+    
+}
+
+#contentContainer {
+    overflow-y: visible;
+    min-height: 100vh;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+/* ------------------------
+   Main Entry Section
+------------------------- */
+.main-entry {
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 40px;
+}
+
+/* Enhanced Input Styles */
+.main-entry input[type="text"],
+.main-entry select {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px 24px;
+    font-family: 'League Spartan', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #EEEED5;
+    background: linear-gradient(135deg, rgba(45, 96, 86, 0.9) 0%, rgba(74, 124, 89, 0.9) 100%);
+    border: 3px solid rgba(238, 238, 213, 0.3);
+    border-radius: 16px;
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.2),
+        0 4px 16px rgba(238, 238, 213, 0.1),
+        inset 0 1px 0 rgba(238, 238, 213, 0.2);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+}
+
+.main-entry input[type="text"]:focus,
+.main-entry select:focus {
+    border-color: #EEEED5;
+    box-shadow: 
+        0 12px 40px rgba(0, 0, 0, 0.25),
+        0 8px 24px rgba(238, 238, 213, 0.2),
+        inset 0 1px 0 rgba(238, 238, 213, 0.3);
+    transform: translateY(-2px);
+}
+
+.main-entry input[type="text"]:hover,
+.main-entry select:hover {
+    border-color: rgba(238, 238, 213, 0.6);
+    box-shadow: 
+        0 10px 36px rgba(0, 0, 0, 0.22),
+        0 6px 20px rgba(238, 238, 213, 0.15),
+        inset 0 1px 0 rgba(238, 238, 213, 0.25);
+}
+
+.main-entry input[type="text"]::placeholder {
+    color: rgba(238, 238, 213, 0.7);
+    font-weight: 500;
+}
+
+.main-entry select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6 L8 10 L12 6" stroke="%23EEEED5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat;
+    background-position: right 20px center;
+    padding-right: 50px;
+}
+
+.main-entry select option {
+    background: #2D6056;
+    color: #EEEED5;
+    font-weight: 600;
+    padding: 12px;
+}
+
+/* Input container for better spacing */
+.input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    max-width: 400px;
+    align-items: center;
+}
+
+/* Label styling */
+.input-label {
+    color: #EEEED5;
+    font-family: 'League Spartan', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Dashboard Button Animations */
+@keyframes pulse {
+    0% { opacity: 0.5; transform: scale(1); }
+    100% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes glow {
+    0% { opacity: 0.2; transform: scale(1); }
+    100% { opacity: 0.4; transform: scale(1.1); }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+    60% { transform: translateY(-4px); }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+/* Enhanced Load Dashboard Button Hover Effects */
+#loadDashboardBtn:hover {
+    transform: translateY(-8px) scale(1.05) !important;
+    box-shadow: 0 16px 60px rgba(45, 96, 86, 0.5), 0 8px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(238, 238, 213, 0.3) !important;
+    background: linear-gradient(135deg, #3a6b5f 0%, #5a8c6a 50%, #3a6b5f 100%) !important;
+}
+
+#loadDashboardBtn:active {
+    transform: translateY(-2px) scale(1.02) !important;
+    box-shadow: 0 8px 30px rgba(45, 96, 86, 0.4), 0 4px 15px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(238, 238, 213, 0.25) !important;
+}
+
+/* ------------------------
+   Stats Section
+------------------------- */
+.stats-container {
+    width: 100%;
+    max-width: 1600px;
+    min-height: 100vh;
+    margin: 0 auto;
+    margin-top: clamp(16px, 3vw, 40px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    gap: var(--section-gap-major);
+    padding: clamp(72px, 9vw, 120px) 20px 72px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 0;
+    overflow-x: visible;
+}
+
+.background-overlay, .background-overlay-second {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    pointer-events: none;
+}
+
+.content-container {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    display: grid;
+    gap: 36px;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+/* ------------------------
+   Row Layouts
+------------------------- */
+.row-0, .row-1, .row-2, .row-3 {
+    display: grid;
+    width: 100%;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 36px;
+}
+
+.row-0 {
+    grid-template-columns: 1fr;
+    text-align: center;
+}
+
+.row-1, .row-2 {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+/* Four stats on one row; minmax(0,1fr) lets columns shrink so the 4th box does not wrap */
+.row-3 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 28px;
+}
+
+/* ------------------------
+   Stat Boxes
+------------------------- */
+.stat-box {
+    padding: 20px;
+    background: #EEEED5;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 12px;
+    box-sizing: border-box;
+}
+
+.stat-box.no-bg {
+    background: none;
+    box-shadow: none;
+    align-items: center;
+}
+
+.stat-box.center {
+    text-align: center;
+    align-items: center;
+}
+
+/* ------------------------
+   Text Styling
+------------------------- */
+.stat-title, .stat-value, .stat-details, .stat-opponent, .stat-opening {
+    color: #0A4345;
+    font-family: 'League Spartan', sans-serif;
+    line-height: 100%;
+}
+
+.stat-title {
+    font-size: 18.26px;
+    font-weight: 400;
+}
+
+.stat-title.large {
+    font-size: 26px;
+    font-weight: 600;
+}
+
+.stat-value {
+    font-size: 32.38px;
+    font-weight: 700;
+}
+
+.stat-details, .stat-opponent, .stat-opening {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+/* ------------------------
+   Profile Section
+------------------------- */
+.profile-stats-container {
+    display: flex;
+    align-items: center;
+}
+
+.profile-stats-container img {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* Row 0 Custom Layout */
+.row-profile {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    width: 1133.87px;
+    height: 115.46px;
+}
+
+/* Header title */
+.stats-header-title {
+    color: #EEEED5;
+    font-size: 40px;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 500;
+    line-height: 100%;
+    text-align: center;
+}
+
+/* Profile container (image + ratings) */
+.profile-stats-container-custom {
+    display: flex;
+    align-items: center;
+}
+
+.profile-avatar {
+    border-radius: 50%;
+    width: 100px;
+    height: 100px;
+    margin-right: 50px;
+    margin-bottom: 50px;
+}
+
+.profile-ratings-row {
+    display: flex;
+    gap: 35px;
+    flex: 1;
+    margin-bottom: 50px;
+}
+
+.profile-rating-box {
+    flex: 1;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+/* Images section */
+#imagesContainerCustom {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-bottom: 30px;
+    margin-top: 100px;
+}
+
+.images-header {
+    color: #EEEED5;
+    font-size: 40px;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 500;
+    line-height: 100%;
+    text-align: center;
+}
+
+.images-container img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: contain;
+    margin: 20px;
+}
+
+/* ------------------------
+   Images Section
+------------------------- */
+#imagesContainer {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin: 100px 0 30px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#imagesContainer img {
+    max-width: 100%;
+    border-radius: 12px;
+    object-fit: contain;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ------------------------
+   Download Button
+------------------------- */
+.download-button,
+.share-button {
+    padding: 12px 22px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #EEEED5;
+    background: linear-gradient(135deg, #2D6056 0%, #4A7C59 100%);
+    border: 2px solid rgba(238, 238, 213, 0.45);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+    font-family: 'League Spartan', sans-serif;
+    margin: 0;
+    align-self: center;
+    position: relative;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
+
+.download-button:hover,
+.share-button:hover {
+    background: linear-gradient(135deg, #356b60 0%, #558f68 100%);
+    border-color: rgba(238, 238, 213, 0.65);
+}
+
+.download-button:focus-visible,
+.share-button:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 3px;
+}
+
+.download-button:disabled,
+.share-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+
+/* Section Title */
+.stat-section-header {
+    color: #EEEED5;
+    font-size: 40px;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 500;
+    line-height: 100%;
+    text-align: center;
+    margin: 40px 0 20px;
+  }
+  
+  /* Special stat box layout */
+  .stat-box2 {
+    padding: 20px;
+    background: #EEEED5;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    gap: 12px;
+    box-sizing: border-box;
+  }
+  
+  /* Link inside stat box */
+  .stat-link {
+    color: #1b4e7d;
+    font-weight: bold;
+    text-decoration: underline;
+    margin-top: 8px;
+  }
+  
+  .stat-link:hover {
+    color: #0d365f;
+  }
+  
+  /* Optional: smaller date styling */
+  .stat-date {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0A4345;
+  }
+
+  
+/* ------------------------
+   Responsive Design
+------------------------- */
+@media (max-width: 768px) {
+    .main-entry {
+        margin-top: 4px;
+        padding: 22px 12px 0;
+    }
+
+    .content-container {
+        padding: 12px;
+    }
+
+    .stats-container {
+        margin-top: clamp(12px, 3vw, 28px);
+        padding: clamp(56px, 8vw, 88px) 12px 56px;
+        gap: 52px;
+    }
+
+    .row-1, .row-2 {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .row-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stat-title {
+        font-size: 16px;
+    }
+
+    .stat-value {
+        font-size: 24px;
+    }
+
+    .stat-details, .stat-opponent, .stat-opening {
+        font-size: 14px;
+    }
+
+    .stat-box {
+        padding: 12px;
+    }
+
+    .profile-stats-container img {
+        width: 90px;
+        height: 90px;
+    }
+
+    .download-button,
+    .share-button {
+        font-size: 14px;
+        padding: 10px 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .row-1, .row-2, .row-3 {
+        grid-template-columns: 1fr;
+    }
+
+    .content-container {
+        padding: 10px;
+    }
+
+    .stats-container {
+        padding: 40px 10px 48px;
+        gap: 44px;
+    }
+
+    .stat-box {
+        width: 100%;
+    }
+
+    .download-button,
+    .share-button {
+        width: 100%;
+        max-width: 320px;
+    }
+}
+
+/* ------------------------
+   Images
+------------------------- */
+img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+/* Navigation Styles */
+.nav-link.active {
+    background-color: rgba(238, 238, 213, 0.2) !important;
+    border: 2px solid #EEEED5 !important;
+}
+
+.nav-link:hover {
+    background-color: rgba(238, 238, 213, 0.1) !important;
+    transform: translateY(-2px);
+}
+
+/* Page Content Styles */
+.page-content {
+    min-height: calc(100vh - var(--site-nav-offset));
+    padding-top: 36px;
+}
+
+/* Home hero: extra clearance so the gift/pawn art clears the fixed bar (nav can wrap on mid widths) */
+#home-page.page-content {
+    padding-top: clamp(48px, 8vw, 96px);
+}
+
+/* Legacy nav rules removed: old #navigation column layout stacked the bar and broke offset math.
+   Layout is handled by .site-nav / .site-nav-inner (row + mobile drawer). */
+
+/* CTA Button Styles */
+.cta-button {
+    width: 100%;
+    max-width: unset;
+    height: 44px;
+    padding: 0 24px;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color: #EEEED5;
+    background: linear-gradient(90deg, #4A7C59 0%, #2D6056 100%);
+    border: none;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(45, 96, 86, 0.15);
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+    position: relative;
+    outline: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+.cta-button:hover:not(:disabled), .cta-button:focus:not(:disabled) {
+    background: linear-gradient(90deg, #2D6056 0%, #4A7C59 100%);
+    box-shadow: 0 6px 20px rgba(45, 96, 86, 0.22);
+    transform: translateY(-2px) scale(1.02);
+}
+.cta-button:active:not(:disabled) {
+    background: #2D6056;
+    transform: scale(0.98);
+}
+.cta-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Spinner for button */
+.cta-spinner {
+    border: 3px solid #EEEED5;
+    border-top: 3px solid #4A7C59;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Progress bar: stage-based fill + indeterminate sweep for early pipeline stages */
+.loading-bar-track,
+#loadingBar {
+    width: 100%;
+    height: 8px;
+    background: rgba(238, 238, 213, 0.35);
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.loading-bar-fill,
+.loadingBarFill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4A7C59 0%, #2D6056 100%);
+    border-radius: 4px;
+    min-width: 0;
+}
+
+.loading-bar-fill--indeterminate {
+    width: 36%;
+    animation: loadingBarSweep 1.05s ease-in-out infinite alternate;
+}
+
+@keyframes loadingBarSweep {
+    0% {
+        transform: translateX(-20%);
+    }
+    100% {
+        transform: translateX(220%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loading-bar-fill--indeterminate {
+        animation: none;
+        width: 45%;
+        transform: none;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   UX refresh: layout shell, form, nav, dashboard, a11y, reduced motion
+--------------------------------------------------------------------------- */
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.app-shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-main {
+    flex: 1;
+    margin-top: var(--site-nav-offset);
+    padding-bottom: 48px;
+}
+
+.footer-site {
+    color: #EEEED5;
+    text-align: center;
+    padding: 48px 20px 32px;
+    font-family: 'League Spartan', sans-serif;
+    margin-top: auto;
+}
+
+.footer-site a {
+    color: #EEEED5;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.footer-site a:hover {
+    opacity: 0.9;
+}
+
+.footer-sep {
+    opacity: 0.7;
+}
+
+.main-entry {
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: clamp(8px, 2vw, 24px);
+    padding: clamp(28px, 4vw, 48px) 16px 0;
+    box-sizing: border-box;
+}
+
+/* ---- Chess form ---- */
+.chess-form-root {
+    width: 100%;
+}
+
+.chess-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.chess-form-hero-img {
+    max-width: 120px;
+    height: auto;
+    margin-bottom: -12px;
+}
+
+.chess-form-heading {
+    text-align: center;
+    color: #EEEED5;
+    font-family: 'League Spartan', sans-serif;
+    margin-top: 12px;
+}
+
+.chess-form-title-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.chess-form-title {
+    margin: 0;
+    font-size: clamp(1.35rem, 4vw, 2rem);
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.chess-form-year-shell {
+    padding: 8px 14px;
+    background: rgba(238, 238, 213, 0.1);
+    border: 2px solid rgba(238, 238, 213, 0.3);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+}
+
+.chess-form-year-select {
+    background: transparent;
+    border: none;
+    color: #EEEED5;
+    font-family: 'League Spartan', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+    padding: 4px 8px;
+}
+
+.chess-form-subtitle {
+    margin: 12px 0 0;
+    font-size: 1.05rem;
+    font-weight: 400;
+    opacity: 0.95;
+}
+
+.chess-form-examples {
+    width: 100%;
+    max-width: 520px;
+    margin-top: 18px;
+    text-align: center;
+}
+
+.chess-form-examples-label {
+    margin: 0 0 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(238, 238, 213, 0.75);
+    font-family: 'League Spartan', sans-serif;
+}
+
+.chess-form-example-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.chess-form-example-chip {
+    font-family: 'League Spartan', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(238, 238, 213, 0.35);
+    background: rgba(0, 0, 0, 0.15);
+    color: #EEEED5;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.chess-form-example-chip:hover {
+    background: rgba(238, 238, 213, 0.12);
+    border-color: rgba(238, 238, 213, 0.55);
+}
+
+.chess-form-example-chip:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 2px;
+}
+
+.chess-form-input {
+    width: 100%;
+    max-width: 400px;
+    height: 50px;
+    font-family: 'League Spartan', sans-serif;
+    font-size: 1.1rem;
+    text-align: center;
+    color: #EEEED5;
+    background: linear-gradient(135deg, rgba(45, 96, 86, 0.9) 0%, rgba(74, 124, 89, 0.9) 100%);
+    border: 3px solid rgba(238, 238, 213, 0.3);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(238, 238, 213, 0.2);
+    backdrop-filter: blur(10px);
+    margin-top: 20px;
+    outline: none;
+}
+
+.chess-form-input:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 2px;
+}
+
+.chess-form-field-error {
+    margin: 10px 0 0;
+    max-width: 400px;
+    width: 100%;
+    color: #ffb4b4;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.chess-form-cta-shell {
+    width: 100%;
+    max-width: 400px;
+    padding: 20px;
+    border-radius: 8px;
+    border: 3px solid #EEEED5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 15px;
+}
+
+.chess-form-loading-meta {
+    width: 100%;
+    margin-top: 12px;
+}
+
+.chess-form-loading-text {
+    margin: 0;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 700;
+    text-align: center;
+    font-size: 0.95rem;
+    color: #EEEED5;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.chess-form-elapsed {
+    font-variant-numeric: tabular-nums;
+}
+
+.chess-form-loading-hint {
+    margin: 8px 0 0;
+    font-size: 0.75rem;
+    text-align: center;
+    color: rgba(238, 238, 213, 0.85);
+    line-height: 1.35;
+}
+
+.home-error-panel {
+    margin-top: 24px;
+    padding: 16px;
+    max-width: 520px;
+    margin-left: auto;
+    margin-right: auto;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 180, 180, 0.5);
+}
+
+/* ---- Site navigation ---- */
+.site-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: rgba(45, 96, 86, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    border-bottom: 2px solid #EEEED5;
+}
+
+.site-nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+}
+
+.site-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: #EEEED5;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 700;
+    font-size: 1.35rem;
+}
+
+.site-nav-brand:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 4px;
+    border-radius: 6px;
+}
+
+.site-nav-title {
+    color: #EEEED5;
+}
+
+.site-nav-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    align-items: center;
+}
+
+.site-nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #EEEED5;
+    text-decoration: none;
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+.site-nav-link:hover,
+.site-nav-link:focus-visible {
+    background: rgba(238, 238, 213, 0.15);
+}
+
+.nav-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(238, 238, 213, 0.25);
+    border: 1px solid rgba(238, 238, 213, 0.35);
+}
+
+.site-nav-burger {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 44px;
+    height: 44px;
+    padding: 8px;
+    background: rgba(238, 238, 213, 0.12);
+    border: 1px solid rgba(238, 238, 213, 0.35);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.site-nav-burger:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 2px;
+}
+
+.site-nav-burger-bar {
+    display: block;
+    height: 3px;
+    border-radius: 2px;
+    background: #EEEED5;
+}
+
+.site-nav-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1001;
+    border: none;
+    cursor: pointer;
+}
+
+.site-nav-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(320px, 88vw);
+    height: 100vh;
+    background: rgba(36, 78, 70, 0.98);
+    z-index: 1002;
+    padding: 72px 20px 24px;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+    overflow-y: auto;
+}
+
+.site-nav-drawer-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.site-nav-drawer-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 4px;
+    color: #EEEED5;
+    text-decoration: none;
+    font-weight: 700;
+    border-bottom: 1px solid rgba(238, 238, 213, 0.15);
+}
+
+.site-nav-drawer-link.active {
+    color: #b8f5d9;
+}
+
+/* ---- Export strip ---- */
+.export-strip {
+    margin-bottom: 0;
+    padding: 22px 18px;
+    border-radius: 16px;
+    border: 2px solid rgba(238, 238, 213, 0.28);
+    background: rgba(0, 0, 0, 0.12);
+    box-sizing: border-box;
+}
+
+.export-strip-caption {
+    margin: 0 0 14px;
+    font-size: 0.88rem;
+    color: rgba(238, 238, 213, 0.9);
+    line-height: 1.45;
+    text-align: center;
+}
+
+.export-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.export-feedback {
+    margin: 0 0 12px;
+    font-size: 0.85rem;
+    text-align: center;
+    color: rgba(238, 238, 213, 0.92);
+}
+
+.export-feedback-error {
+    color: #ffb4b4;
+}
+
+.export-buttons-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.stats-capture-target {
+    position: relative;
+    margin-top: 0;
+    width: 100%;
+    border-radius: 22px;
+    overflow: hidden;
+}
+
+.stats-capture-inner {
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: clamp(28px, 5vw, 56px) clamp(20px, 4vw, 48px);
+    border-radius: 22px;
+    border: 2px solid rgba(238, 238, 213, 0.32);
+    background: rgba(0, 0, 0, 0.14);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: clamp(16px, 3vw, 28px);
+}
+
+.stats-highlights-section {
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .stats-capture-inner {
+        padding: 24px 14px 28px;
+    }
+}
+
+/* ---- Dashboard embed ---- */
+.dashboard-embed-section {
+    margin-top: 0;
+    padding: 32px 0;
+    width: 100%;
+    box-sizing: border-box;
+    background: linear-gradient(135deg, rgba(45, 96, 86, 0.15) 0%, rgba(74, 124, 89, 0.15) 100%);
+    border: 2px solid rgba(238, 238, 213, 0.35);
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.18);
+}
+
+.dashboard-embed-heading {
+    margin: 0 0 8px;
+    padding: 0 16px;
+    font-size: 1.25rem;
+    font-family: 'League Spartan', sans-serif;
+    color: #EEEED5;
+    text-align: center;
+}
+
+.dashboard-embed-sub {
+    margin: 0 0 24px;
+    padding: 0 16px;
+    font-size: 0.9rem;
+    color: rgba(238, 238, 213, 0.85);
+    text-align: center;
+    line-height: 1.45;
+}
+
+.dashboard-coming-soon .dashboard-embed-sub {
+    margin-bottom: 0;
+}
+
+.dashboard-lazy-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 220px;
+    padding: 32px 20px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.12);
+    border: 1px dashed rgba(238, 238, 213, 0.25);
+}
+
+.dashboard-lazy-copy {
+    margin: 0;
+    max-width: 42ch;
+    text-align: center;
+    font-size: 0.9rem;
+    color: rgba(238, 238, 213, 0.9);
+    line-height: 1.45;
+}
+
+.dashboard-load-btn {
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: 2px solid rgba(238, 238, 213, 0.35);
+    background: linear-gradient(135deg, #2D6056 0%, #4A7C59 100%);
+    color: #EEEED5;
+    cursor: pointer;
+}
+
+.dashboard-load-btn:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 3px;
+}
+
+.dashboard-iframe-shell {
+    width: 100%;
+    height: min(85vh, 920px);
+    min-height: 360px;
+    margin: 0;
+    border-radius: 0;
+    overflow: hidden;
+    border: none;
+    border-top: 2px solid rgba(238, 238, 213, 0.22);
+    border-bottom: 2px solid rgba(238, 238, 213, 0.22);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+}
+
+.dashboard-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+    padding: 0 16px 4px;
+}
+
+.dashboard-tool-btn {
+    font-family: 'League Spartan', sans-serif;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    background: linear-gradient(135deg, #2D6056 0%, #4A7C59 100%);
+    color: #EEEED5;
+}
+
+.dashboard-tool-primary {
+    background: linear-gradient(90deg, #43e97b 0%, #38f9d7 100%);
+    color: #1a3d36;
+}
+
+.dashboard-tool-btn:focus-visible {
+    outline: 2px solid #EEEED5;
+    outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+    .dashboard-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+@media (max-width: 768px) {
+    html, body {
+        background-attachment: scroll;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    .cursor-trail,
+    .checkmate-trail,
+    .knight-trail,
+    .click-effect {
+        display: none !important;
+        animation: none !important;
+    }
+
+    html, body,
+    button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn {
+        cursor: auto !important;
+    }
+
+    .cta-spinner {
+        animation: none;
+        border-top-color: #EEEED5;
+    }
+}
+

@@ -3,131 +3,252 @@ output_dir = 'static/images/'
 os.makedirs(output_dir, exist_ok=True)
 
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from typing import List, Optional, Tuple
+
 import requests
+from requests.adapters import HTTPAdapter
+from requests_cache import CachedSession, NEVER_EXPIRE
+from urllib3.util.retry import Retry
+
+# ---------------------------------------------------------------------------
+# Chess.com HTTP session
+# ---------------------------------------------------------------------------
+# Three things going on here:
+#   1. Connection pooling via HTTPAdapter — keep-alive across the ~12-120
+#      requests we make per fetch, instead of a TLS handshake every time.
+#   2. Persistent SQLite cache via requests-cache — completed monthly archives
+#      are immutable, so we never re-download them. Current month + the
+#      `/archives` index get a 5-minute TTL.
+#   3. Concurrency tuned to 8 workers. Chess.com's public Published-Data API
+#      has no documented hard concurrency limit; we rely on per-call 429
+#      backoff (see `fetch_monthly_games`) to stay polite.
+# ---------------------------------------------------------------------------
+
+_CACHE_DIR = ".cache"
+os.makedirs(_CACHE_DIR, exist_ok=True)
+
+_CHESSCOM_HEADERS = {
+    "User-Agent": "Chesslytics/1.0 (+https://github.com/EdwardL903)",
+    "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate",
+}
+
+_session = CachedSession(
+    cache_name=os.path.join(_CACHE_DIR, "chesscom"),
+    backend="sqlite",
+    allowable_codes=(200,),   # never cache 404 / 429 / 5xx
+    stale_if_error=True,      # serve stale on transient API outage
+    expire_after=300,         # default TTL = 5 min (overridden per-call below)
+)
+
+_retry = Retry(
+    total=2,
+    backoff_factor=0.5,
+    status_forcelist=(500, 502, 503, 504),
+    allowed_methods=frozenset(["GET"]),
+)
+_adapter = HTTPAdapter(pool_connections=16, pool_maxsize=16, max_retries=_retry)
+_session.mount("https://", _adapter)
+_session.mount("http://", _adapter)
+_session.headers.update(_CHESSCOM_HEADERS)
+
+_FETCH_WORKERS = 8
+
+try:
+    from data.generate_progress import write_generate_progress
+except ImportError:
+    def write_generate_progress(username, year, payload):  # type: ignore[misc]
+        pass
+
+
+def _is_completed_month(year: int, month: int) -> bool:
+    """A month strictly before this month is immutable — its games never change."""
+    now = datetime.now()
+    return (year, month) < (now.year, now.month)
+
 
 def fetch_player_data(username):
     url = f"https://api.chess.com/pub/player/{username}"
-    headers = {
-        "User-Agent": "MyChessApp/1.0 (https://example.com)"  # ensure my request is legit 
-    }
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code != 200:
-        print(f"Error: Received status code {response.status_code}")
-        print(f"Response content: {response.text}")
+    try:
+        response = _session.get(url, timeout=10)
+    except requests.RequestException as e:
+        print(f"Network error fetching player {username}: {e}")
         return None
-    
+
+    if response.status_code != 200:
+        print(f"Error: Received status code {response.status_code} for player {username}")
+        return None
+
     try:
         return response.json()
     except requests.exceptions.JSONDecodeError:
-        print(f"Failed to parse JSON. Status code: {response.status_code}, Content: {response.text}")
+        print(f"Failed to parse JSON for player {username}. Status: {response.status_code}")
         return None
 
-#my_data = fetch_player_data("emazing19")
-#print(my_data.keys())
 
-#i only want my avatar
-#what do i want? 1. their country so I can strip it, if titled, is_streamer
-## Future Note: I want to extract your pfp and be able to host a wesbite showing your pfp
+def fetch_archive_urls(username: str) -> List[Tuple[int, int]]:
+    """
+    Ask Chess.com for the list of monthly archives that actually have games.
 
-def fetch_monthly_games(username, year, month):
-    url = f"https://api.chess.com/pub/player/{username}/games/{year}/{month:02}"
-    headers = {
-        "User-Agent": "MyChessApp/1.0 (https://example.com)"
-    }
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code != 200:
-        print(f"Error: Received status code {response.status_code}")
-        print(f"Response content: {response.text}")
-        return None
-    
+    This endpoint is the right way to enumerate a player's history — it
+    returns only months with at least one game, so we don't waste 404s on
+    inactive months.
+
+    Returns:
+        Sorted list of (year, month) tuples, e.g. [(2018, 4), (2018, 6), ...].
+        Empty list on error.
+    """
+    url = f"https://api.chess.com/pub/player/{username}/games/archives"
     try:
-        data = response.json()
-        return data["games"]
-    except requests.exceptions.JSONDecodeError:
-        print(f"Failed to parse JSON. Status code: {response.status_code}, Content: {response.text}")
-        return None
-
-
-def fetch_all_games(username):
-    player_data = fetch_player_data(username)
-    if not player_data or "joined" not in player_data:
-        print("Could not determine player's join date.")
+        response = _session.get(url, timeout=10)
+        if response.status_code != 200:
+            print(f"Failed to fetch archives index for {username}: HTTP {response.status_code}")
+            return []
+        archive_urls = response.json().get("archives", [])
+    except Exception as e:
+        print(f"Failed to fetch archives index for {username}: {e}")
         return []
 
-    join_date = datetime.fromtimestamp(player_data["joined"])
-    current_date = datetime.now()
+    # URLs look like: https://api.chess.com/pub/player/{user}/games/{YYYY}/{MM}
+    months: List[Tuple[int, int]] = []
+    for u in archive_urls:
+        parts = u.rstrip("/").split("/")
+        try:
+            months.append((int(parts[-2]), int(parts[-1])))
+        except (ValueError, IndexError):
+            continue
+    return sorted(months)
 
-    all_games = []
-    year, month = join_date.year, join_date.month
 
-    while (year, month) <= (current_date.year, current_date.month):
-        games = fetch_monthly_games(username, year, month)
-        all_games.extend(games)
+def fetch_monthly_games(username, year, month, max_retries=3):
+    """
+    Fetch all games for a specific month. Cached forever for completed months,
+    5 min for the current month.
+    """
+    url = f"https://api.chess.com/pub/player/{username}/games/{year}/{month:02d}"
+    expire = NEVER_EXPIRE if _is_completed_month(int(year), int(month)) else 300
 
-        # Increment month
-        if month == 12:
-            year += 1
-            month = 1
-        else:
-            month += 1
+    for attempt in range(max_retries):
+        try:
+            response = _session.get(url, timeout=15, expire_after=expire)
 
+            if response.status_code == 429:
+                # Exponential backoff with jitter; Chess.com's recommended retry pattern.
+                wait_time = (2 ** attempt) + (time.time() % 1)
+                print(f"Rate limited for {username} {year}/{month:02d}. "
+                      f"Waiting {wait_time:.2f}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+
+            if response.status_code == 404:
+                # No games for this month — not an error.
+                return []
+
+            if response.status_code != 200:
+                print(f"Error {response.status_code} for {username} {year}/{month:02d}: "
+                      f"{response.text[:200]}")
+                return None
+
+            return response.json().get("games", [])
+
+        except requests.exceptions.Timeout:
+            print(f"Timeout for {username} {year}/{month:02d} (attempt {attempt + 1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(1)
+                continue
+            return None
+        except requests.exceptions.JSONDecodeError:
+            print(f"Failed to parse JSON for {username} {year}/{month:02d}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error for {username} {year}/{month:02d}: {e}")
+            return None
+
+    print(f"Failed to fetch {username} {year}/{month:02d} after {max_retries} attempts")
+    return None
+
+
+def _fetch_months_concurrently(
+    username: str,
+    months: List[Tuple[int, int]],
+    game_filter: Optional[callable] = None,
+) -> list:
+    """Shared concurrent fetch loop for fetch_all_games / fetch_all_games_for_selected_year."""
+    all_games: list = []
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as executor:
+        futures = {
+            executor.submit(fetch_monthly_games, username, y, m): (y, m)
+            for y, m in months
+        }
+        for future in as_completed(futures):
+            y, m = futures[future]
+            try:
+                games = future.result() or []
+                if game_filter:
+                    games = [g for g in games if game_filter(g)]
+                if games:
+                    all_games.extend(games)
+                    print(f"✓ {username} {y}/{m:02d}: {len(games)} games")
+            except Exception as e:
+                print(f"✗ {username} {y}/{m:02d}: {e}")
     return all_games
 
-def fetch_all_games_for_current_year(username, game_filter=None):
-    player_data = fetch_player_data(username)
-    if not player_data or "joined" not in player_data:
-        print("Could not determine player's join date.")
+
+def fetch_all_games(username, since_month: Optional[Tuple[int, int]] = None):
+    """
+    Fetch every game in the player's history, using the /archives index.
+
+    Args:
+        username: Chess.com username.
+        since_month: If provided as (year, month), skip months strictly
+            BEFORE this month. The given month itself IS re-fetched
+            because new games can land in the current month between
+            uploads. Used by the BigQuery incremental fetch path.
+    """
+    months = fetch_archive_urls(username)
+    if not months:
+        print(f"No archives found for {username}.")
         return []
-        
-    current_date = datetime.now()
-    all_games = []
-    
-    year = current_date.year
-    month = 1
 
-    while month <= current_date.month:
-        games = fetch_monthly_games(username, year, month)
-        if games is None:
-            print(f"No games found for {username} in {year}-{month:02d}.")
-            games = []  
-        if game_filter:
-            games = [game for game in games if game_filter(game)]
-        all_games.extend(games)
-        month += 1
+    if since_month is not None:
+        before = len(months)
+        months = [(y, m) for (y, m) in months if (y, m) >= since_month]
+        print(f"Incremental: filtered {before} months -> {len(months)} (since {since_month[0]}/{since_month[1]:02d})")
 
+    all_games = _fetch_months_concurrently(username, months)
+    print(f"Total games fetched for {username}: {len(all_games)}")
     return all_games
 
-def fetch_all_games_for_selected_year(username, year, game_filter=None):
-    player_data = fetch_player_data(username)
-    if not player_data or "joined" not in player_data:
-        print("Could not determine player's join date.")
-        return []
 
-    current_date = datetime.now()
-    # last_year = current_date.year - 1
-    all_games = []
-    # year = last_year
+def fetch_all_games_for_selected_year(username, year, game_filter=None,
+                                       since_month: Optional[Tuple[int, int]] = None):
+    """
+    Fetch every game for a single year, restricted to months that exist in /archives.
+
+    Args:
+        username, year, game_filter: as before.
+        since_month: see `fetch_all_games`. The (year, month) pair is
+            applied AFTER the year filter, so only useful when fetching
+            the current year incrementally.
+    """
     year = int(year)
-    month = 1
+    all_months = fetch_archive_urls(username)
+    months = [(y, m) for (y, m) in all_months if y == year]
 
-    while month <= 12:
-        if year > current_date.year or (year == current_date.year and month > current_date.month):
-            print(f"Skipping {year}-{month:02d} because it's in the future.")
-            break
+    if since_month is not None:
+        before = len(months)
+        months = [(y, m) for (y, m) in months if (y, m) >= since_month]
+        print(f"Incremental: filtered {before} months -> {len(months)} (since {since_month[0]}/{since_month[1]:02d})")
 
-        games = fetch_monthly_games(username, year, month)
-        if games is None:
-            print(f"No games found for {username} in {year}-{month:02d}.")
-            games = []
-        if game_filter:
-            games = [game for game in games if game_filter(game)]
-        all_games.extend(games)
+    if not months:
+        print(f"No games found for {username} in {year}.")
+        return []
 
-        # Increment month
-        month += 1
-
+    all_games = _fetch_months_concurrently(username, months, game_filter=game_filter)
+    print(f"Total games fetched for {username} in {year}: {len(all_games)}")
     return all_games
 
 
@@ -430,11 +551,19 @@ def process_game(game):
 
 # Main function to fetch and process game data
 def fetch_and_process_game_data(username, year, engine_path="/opt/homebrew/bin/stockfish"):
+    yr = str(year)
+    write_generate_progress(username, yr, {"stage": "fetching"})
     # Fetch the game data (bulk request or caching here would speed up further)
     if year == "ALL":
         all_games = fetch_all_games(username)
     else:
         all_games = fetch_all_games_for_selected_year(username, year)
+
+    write_generate_progress(
+        username,
+        yr,
+        {"stage": "processing_games", "games": len(all_games)},
+    )
 
     # Process games in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor() as executor:
@@ -513,44 +642,69 @@ def clean_dataframe(df, username):
 
     cleaned_df['eco'] = cleaned_df['eco'].apply(truncate_eco)
 
+    # ------------------------------------------------------------------
+    # Vectorized player-perspective assignment.
+    #
+    # Replaces a `df.iterrows()` loop that did the same thing per row
+    # (~50-100x slower on multi-thousand-game users). Logic is identical:
+    # for each game, determine whether `username` is white or black, then
+    # mirror the corresponding player's columns into the `my_*`/`opp_*`
+    # columns. Games where the username matches neither are dropped with
+    # a warning (was: per-row print + leave row with None values).
+    # ------------------------------------------------------------------
+    DRAW_RESULTS = {
+        'draw', 'stalemate', 'repetition', 'insufficient',
+        'timevsinsufficient', 'agreed', '50move',
+    }
 
-    columns_to_initialize = [
-        'my_username', 'my_rating', 'my_result', 'my_color', 'my_win_or_lose', 'my_metamoves',
-        'opp_username', 'opp_rating', 'opp_result', 'opp_metamoves' #do i have to initialize my_color
-    ]
-    for column in columns_to_initialize:
-        cleaned_df[column] = None
+    user_lc = username.lower()
+    white_lc = cleaned_df['white_username'].str.lower()
+    black_lc = cleaned_df['black_username'].str.lower()
+    is_white = white_lc == user_lc
+    is_black = black_lc == user_lc
+    matched = is_white | is_black
 
-    for index, row in cleaned_df.iterrows():
-        if row['white_username'].lower() == username.lower():
-            cleaned_df.at[index, 'my_username'] = row['white_username']
-            cleaned_df.at[index, 'my_rating'] = row['white_rating']
-            cleaned_df.at[index, 'my_result'] = row['white_result']
-            cleaned_df.at[index, 'my_color'] = 'white'
-            cleaned_df.at[index, 'my_metamoves'] = row['white_metamoves']
-            cleaned_df.at[index, 'opp_username'] = row['black_username']
-            cleaned_df.at[index, 'opp_rating'] = row['black_rating']
-            cleaned_df.at[index, 'opp_result'] = row['black_result']
-            cleaned_df.at[index, 'opp_metamoves'] = row['black_metamoves']
-            cleaned_df.at[index, 'my_win_or_lose'] = 'win' if row['white_result'] == 'win' else 'draw' if row['white_result'] in ['draw', 'stalemate', 'repetition', 'insufficient', 'timevsinsufficient', 'agreed', '50move'] else 'lose'
+    if not matched.all():
+        unmatched = cleaned_df.loc[~matched, ['white_username', 'black_username', 'link']]
+        for _, row in unmatched.iterrows():
+            print(
+                f"WARNING: username '{username}' not found in either player. "
+                f"white={row['white_username']}, black={row['black_username']}, "
+                f"link={row['link']}"
+            )
+        cleaned_df = cleaned_df.loc[matched].reset_index(drop=True)
+        is_white = is_white.loc[matched].reset_index(drop=True)
 
-        elif row['black_username'].lower() == username.lower():
-            cleaned_df.at[index, 'my_username'] = row['black_username']
-            cleaned_df.at[index, 'my_rating'] = row['black_rating']
-            cleaned_df.at[index, 'my_result'] = row['black_result']
-            cleaned_df.at[index, 'my_color'] = 'black'
-            cleaned_df.at[index, 'my_metamoves'] = row['black_metamoves']
-            cleaned_df.at[index, 'opp_username'] = row['white_username']
-            cleaned_df.at[index, 'opp_rating'] = row['white_rating']
-            cleaned_df.at[index, 'opp_result'] = row['white_result']
-            cleaned_df.at[index, 'opp_metamoves'] = row['white_metamoves']
-            cleaned_df.at[index, 'my_win_or_lose'] = 'win' if row['black_result'] == 'win' else 'draw' if row['black_result'] in ['draw', 'stalemate', 'repetition', 'insufficient', 'timevsinsufficient', 'agreed', '50move'] else 'lose'
-        else:
-            print(f"BIG FUCKING Error: username '{username}' not found in either white or black columns at index {index}")
-            print(f"White Username: {row['white_username']}, Black Username: {row['black_username']}, Game Link: {row['link']}")
+    def _pick(white_col, black_col):
+        return np.where(is_white, cleaned_df[white_col], cleaned_df[black_col])
 
-    cleaned_df['my_opening'] = cleaned_df.apply(update_opening, axis=1)
-    cleaned_df['rating_diff'] = cleaned_df.apply(lambda row: row['my_rating'] - row['opp_rating'], axis=1)
+    cleaned_df['my_username']  = _pick('white_username',  'black_username')
+    cleaned_df['my_rating']    = _pick('white_rating',    'black_rating')
+    cleaned_df['my_result']    = _pick('white_result',    'black_result')
+    cleaned_df['my_metamoves'] = _pick('white_metamoves', 'black_metamoves')
+    cleaned_df['opp_username']  = _pick('black_username',  'white_username')
+    cleaned_df['opp_rating']    = _pick('black_rating',    'white_rating')
+    cleaned_df['opp_result']    = _pick('black_result',    'white_result')
+    cleaned_df['opp_metamoves'] = _pick('black_metamoves', 'white_metamoves')
+    cleaned_df['my_color'] = np.where(is_white, 'white', 'black')
+
+    # Vectorized win/draw/lose categorization
+    my_result_series = cleaned_df['my_result']
+    cleaned_df['my_win_or_lose'] = np.where(
+        my_result_series == 'win', 'win',
+        np.where(my_result_series.isin(DRAW_RESULTS), 'draw', 'lose'),
+    )
+
+    # Vectorized opening: white keeps non-Defense ECOs, black keeps Defense ECOs.
+    eco_str = cleaned_df['eco'].fillna('')
+    has_defense = eco_str.str.contains('Defense', na=False)
+    cleaned_df['my_opening'] = np.where(
+        (is_white & ~has_defense) | (~is_white & has_defense),
+        cleaned_df['eco'],
+        'N/A',
+    )
+
+    cleaned_df['rating_diff'] = cleaned_df['my_rating'] - cleaned_df['opp_rating']
 
     def time_string_to_seconds_with_fraction(time_str):
         # Split the string into hours, minutes, and seconds
@@ -646,25 +800,31 @@ def clean_dataframe(df, username):
     cleaned_df['my_num_moves'] = cleaned_df['my_metamoves'].apply(lambda x: len(x) if x else 0)
 
 
-        # Add a safe calculation for ratios, only if time_control is valid
-    def safe_time_left_ratio(row, col_name):
-        
-        time_control_seconds = convert_time_class_to_seconds(row['time_control'])
-        if time_control_seconds == "Weird" or time_control_seconds == 0:
-            print(f"Printing Row: {row['link']} and its time_control {row['time_control']} and also print time_control_seconds {time_control_seconds}")
-            return np.nan  # Return NaN for invalid or unrecognized time controls
-        return row[col_name] / time_control_seconds
-    
-    
-    cleaned_df['my_time_left_ratio'] = cleaned_df.apply(
-        lambda row: safe_time_left_ratio(row, 'my_time_left'),
-        axis=1
-    )
-    
-    cleaned_df['opp_time_left_ratio'] = cleaned_df.apply(
-        lambda row: safe_time_left_ratio(row, 'opp_time_left'),
-        axis=1
-    )
+    # ------------------------------------------------------------------
+    # Vectorized time_left_ratio.
+    #
+    # The previous version called convert_time_class_to_seconds() inside a
+    # per-row apply, re-parsing the same time_control string thousands of
+    # times. Now we parse each unique time_control exactly once and map
+    # the result back across the column.
+    # ------------------------------------------------------------------
+    unique_tc = cleaned_df['time_control'].dropna().unique()
+    tc_to_seconds = {tc: convert_time_class_to_seconds(tc) for tc in unique_tc}
+    tc_seconds = cleaned_df['time_control'].map(tc_to_seconds)
+    # "Weird" sentinels and zero-second controls become NaN to short-circuit ratios
+    tc_seconds_numeric = pd.to_numeric(tc_seconds, errors='coerce')
+    tc_seconds_numeric = tc_seconds_numeric.where(tc_seconds_numeric > 0)
+
+    invalid_mask = tc_seconds_numeric.isna() & cleaned_df['time_control'].notna()
+    if invalid_mask.any():
+        for _, row in cleaned_df.loc[invalid_mask, ['link', 'time_control']].drop_duplicates('time_control').iterrows():
+            print(
+                f"Unrecognized time_control: {row['time_control']!r} "
+                f"(first seen at {row['link']})"
+            )
+
+    cleaned_df['my_time_left_ratio']  = cleaned_df['my_time_left']  / tc_seconds_numeric
+    cleaned_df['opp_time_left_ratio'] = cleaned_df['opp_time_left'] / tc_seconds_numeric
 
 
     # Split moves based on player color

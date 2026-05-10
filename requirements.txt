@@ -46,12 +46,17 @@ oauthlib==3.3.0
 openpyxl==3.1.5
 packaging==24.2
 pandas==2.2.3
+# pandas-gbq is required by google-cloud-bigquery's DataFrame upload path
+# (load_table_from_dataframe). Without it, every BigQuery write logs a
+# FutureWarning. See api/bigquery_dashboard.upload_raw_games.
+pandas-gbq==0.27.0
 pillow==11.1.0
 proto-plus==1.26.1
 protobuf==6.31.1
 pyarrow==20.0.0
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
+pydata-google-auth==1.9.1
 pyparsing==3.2.1
 python-chess==1.999
 python-dateutil==2.9.0.post0
@@ -59,6 +64,7 @@ python-dotenv==1.1.0
 pytz==2024.2
 redis==6.2.0
 requests==2.32.3
+requests-cache==1.3.1
 requests-oauthlib==2.0.0
 rsa==4.9.1
 s3transfer==0.13.0
