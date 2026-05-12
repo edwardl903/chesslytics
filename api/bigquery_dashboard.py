@@ -22,10 +22,13 @@ class BigQueryDashboardManager:
         """Initialize BigQuery and Looker Studio integration"""
         self.project_id = "crucial-decoder-462021-m4"  # Match the project where data is uploaded
         self.dataset_id = "test1"  # Match the dataset where data is uploaded
-        # NOTE: `games_table` is the legacy "everything flat" table read by
-        # dashboard_top_picks-style queries. New writes all go to `raw_games`
-        # (see _ensure_raw_games_table_exists / upload_raw_games).
-        self.games_table = "megachessdataset"
+        # `raw_games` is the only table that's actually being written to today
+        # (see `_ensure_raw_games_table_exists` / `upload_raw_games`). The
+        # Looker dashboard's `chess_games_dynamic_view` is rebuilt on top of
+        # it on every /generate (see `_dashboard_view_sql` below). The legacy
+        # flat table `megachessdataset` is no longer queried and will be
+        # retired once dbt models land.
+        self.games_table = "raw_games"
         
         # Initialize BigQuery client
         self.client = self._get_bigquery_client()
@@ -167,7 +170,162 @@ class BigQueryDashboardManager:
         }
         
         return flattened
-    
+
+    # ------------------------------------------------------------------
+    # Dashboard view (Looker Studio source)
+    # ------------------------------------------------------------------
+    # `chess_games_dynamic_view` is the view Looker Studio reads from. It
+    # used to live on top of the legacy flat `megachessdataset` (which is
+    # no longer being written). We rebuild the same shape on top of
+    # `raw_games` so Looker keeps working without dbt.
+    #
+    # Perspective: we use `loaded_by_user` (set in `upload_raw_games`) as
+    # the viewer. That gives one row per game per upload, with `my_*` /
+    # `opp_*` set from the viewer's color.
+    #
+    # PGN-deep fields (`my_moves`, `opp_moves`, `moves`, `my_num_moves`,
+    # `my_time_left`, `opp_time_left`, `my_time_left_ratio`,
+    # `opp_time_left_ratio`, `time_spent`, `en_passant_count`,
+    # `promotion_count`, `*_castling`) require per-player PGN parsing; we
+    # surface NULL for them today so existing Looker charts that reference
+    # them don't break. Filling them in is part of the dbt migration
+    # roadmap.
+    # ------------------------------------------------------------------
+
+    def _dashboard_view_sql(self, view_id: str) -> str:
+        """Return a CREATE OR REPLACE VIEW statement for the dashboard view."""
+        raw_games_fq = f"`{self.project_id}.{self.dataset_id}.raw_games`"
+        return f"""
+        CREATE OR REPLACE VIEW `{view_id}` AS
+        WITH base AS (
+            SELECT
+                uuid,
+                url,
+                pgn,
+                time_class,
+                time_control,
+                rules AS game_type,
+                rated,
+                TIMESTAMP_SECONDS(end_time) AS timestamp,
+                DATE(TIMESTAMP_SECONDS(end_time)) AS date,
+                white_username,
+                white_rating,
+                white_result,
+                black_username,
+                black_rating,
+                black_result,
+                white_accuracy,
+                black_accuracy,
+                loaded_by_user,
+                uploaded_at
+            FROM {raw_games_fq}
+        ),
+        perspective AS (
+            SELECT
+                *,
+                LOWER(white_username) = LOWER(loaded_by_user) AS _is_white
+            FROM base
+        ),
+        enriched AS (
+            SELECT
+                uuid,
+                url,
+                pgn,
+                timestamp,
+                date,
+                time_control,
+                time_class,
+                game_type,
+                rated,
+                IF(_is_white, white_username, black_username) AS my_username,
+                IF(_is_white, 'white', 'black')              AS my_color,
+                IF(_is_white, white_rating,   black_rating)  AS my_rating,
+                IF(_is_white, white_result,   black_result)  AS my_result,
+                IF(_is_white, white_accuracy, black_accuracy) AS my_accuracy,
+                IF(_is_white, black_username, white_username) AS opp_username,
+                IF(_is_white, black_rating,   white_rating)   AS opp_rating,
+                IF(_is_white, black_result,   white_result)   AS opp_result,
+                IF(_is_white, black_accuracy, white_accuracy) AS opp_accuracy,
+                EXTRACT(MONTH FROM timestamp)        AS month,
+                EXTRACT(DAYOFWEEK FROM timestamp)    AS day_of_week,
+                FORMAT_TIMESTAMP('%A', timestamp)    AS weekday,
+                EXTRACT(HOUR FROM timestamp)         AS hour,
+                uploaded_at,
+                loaded_by_user
+            FROM perspective
+        ),
+        with_eco AS (
+            SELECT
+                e.*,
+                COALESCE(
+                    REGEXP_EXTRACT(
+                        REGEXP_EXTRACT(pgn, r'\\[ECOUrl "https?://[^"]+/openings/([^"]+)"\\]'),
+                        r'^(.+?(?:Defense|Gambit|Opening|Game|Attack|System))'
+                    ),
+                    REGEXP_EXTRACT(pgn, r'\\[ECOUrl "https?://[^"]+/openings/([^"]+)"\\]'),
+                    'No Opening'
+                ) AS eco
+            FROM enriched e
+        )
+        SELECT
+            uuid,
+            url,
+            pgn,
+            timestamp,
+            date,
+            time_control,
+            time_class,
+            game_type,
+            rated,
+            eco,
+            CASE
+                WHEN eco IS NULL OR eco = 'No Opening' THEN 'N/A'
+                WHEN my_color = 'white' AND NOT REGEXP_CONTAINS(eco, 'Defense') THEN eco
+                WHEN my_color = 'black' AND REGEXP_CONTAINS(eco, 'Defense') THEN eco
+                ELSE 'N/A'
+            END AS my_opening,
+            my_username,
+            my_rating,
+            my_result,
+            my_color,
+            my_accuracy,
+            opp_username,
+            opp_rating,
+            opp_result,
+            opp_accuracy,
+            CASE
+                WHEN my_result = 'win' THEN 'win'
+                WHEN my_result IN (
+                    'draw','stalemate','repetition','insufficient',
+                    'timevsinsufficient','agreed','50move'
+                ) THEN 'draw'
+                ELSE 'lose'
+            END AS my_win_or_lose,
+            (my_rating - opp_rating) AS rating_diff,
+            CAST(NULL AS STRING)   AS my_moves,
+            CAST(NULL AS STRING)   AS opp_moves,
+            CAST(NULL AS STRING)   AS moves,
+            CAST(NULL AS INT64)    AS my_num_moves,
+            CAST(NULL AS FLOAT64)  AS my_time_left,
+            CAST(NULL AS FLOAT64)  AS opp_time_left,
+            CAST(NULL AS FLOAT64)  AS my_time_left_ratio,
+            CAST(NULL AS FLOAT64)  AS opp_time_left_ratio,
+            CAST(NULL AS FLOAT64)  AS time_spent,
+            CAST(NULL AS INT64)    AS en_passant_count,
+            CAST(NULL AS INT64)    AS promotion_count,
+            CAST(NULL AS STRING)   AS my_castling,
+            CAST(NULL AS STRING)   AS opp_castling,
+            month,
+            weekday,
+            hour,
+            day_of_week,
+            uuid AS unique_id,
+            uploaded_at,
+            CONCAT(my_username, '_', EXTRACT(YEAR FROM timestamp)) AS username_year
+        FROM with_eco
+        WHERE my_username IS NOT NULL
+        """
+
     # ------------------------------------------------------------------
     # Incremental-fetch helpers
     # ------------------------------------------------------------------
@@ -355,70 +513,28 @@ class BigQueryDashboardManager:
             username_year = f"{username}_{year}" if year else username
             print(f"🔍 Creating dashboard for user: {username}, year: {year}, username_year: {username_year}")
             
-            # Create or update the single dynamic view in BigQuery
+            # Rebuild the dynamic view on top of raw_games (see _dashboard_view_sql)
             view_name = "chess_games_dynamic_view"
             view_id = f"{self.project_id}.{self.dataset_id}.{view_name}"
-            
-            # Create a view that includes all data but can be filtered by URL parameters
-            # This view will be used by Looker Studio with URL parameters for filtering
-            view_query = f"""
-            CREATE OR REPLACE VIEW `{view_id}`
-            AS SELECT 
-                url,
-                uuid,
-                timestamp,
-                time_class,
-                game_type,
-                rated,
-                eco,
-                my_opening,
-                my_username,
-                my_rating,
-                my_result,
-                my_color,
-                opp_username,
-                opp_rating,
-                opp_result,
-                my_win_or_lose,
-                rating_diff,
-                my_time_left,
-                opp_time_left,
-                my_time_left_ratio,
-                opp_time_left_ratio,
-                time_spent,
-                my_moves,
-                opp_moves,
-                my_num_moves,
-                en_passant_count,
-                promotion_count,
-                my_castling,
-                opp_castling,
-                month,
-                weekday,
-                hour,
-                day_of_week,
-                unique_id,
-                uploaded_at,
-                CONCAT(my_username, '_', EXTRACT(YEAR FROM timestamp)) as username_year
-            FROM `{self.project_id}.{self.dataset_id}.{self.games_table}`
-            """
-            
-            # Execute the view creation
+            view_query = self._dashboard_view_sql(view_id)
+
             try:
                 self.client.query(view_query).result()
                 print(f"✅ Updated dynamic view: {view_name}")
-                
+
                 # Verify the view has data for this user
                 verify_query = f"""
-                SELECT COUNT(*) as count 
-                FROM `{view_id}` 
-                WHERE username_year = '{username_year}'
+                SELECT COUNT(*) as count
+                FROM `{view_id}`
+                WHERE username_year = @username_year
                 """
-                result = self.client.query(verify_query).result()
+                job_config = bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ScalarQueryParameter("username_year", "STRING", username_year)
+                ])
+                result = self.client.query(verify_query, job_config=job_config).result()
                 for row in result:
-                    count = row.count
-                    print(f"📊 Found {count} records for {username_year} in dynamic view")
-                    
+                    print(f"📊 Found {row.count} records for {username_year} in dynamic view")
+
             except Exception as e:
                 print(f"⚠️ View update warning: {e}")
             
@@ -445,57 +561,11 @@ class BigQueryDashboardManager:
         try:
             username_year = f"{username}_{year}" if year else username
             
-            # Create or update the single dynamic view in BigQuery
+            # Rebuild the dynamic view on top of raw_games (see _dashboard_view_sql)
             view_name = "chess_games_dynamic_view"
             view_id = f"{self.project_id}.{self.dataset_id}.{view_name}"
-            
-            # Create a view that includes all data but can be filtered by URL parameters
-            view_query = f"""
-            CREATE OR REPLACE VIEW `{view_id}`
-            AS SELECT 
-                url,
-                uuid,
-                date,
-                timestamp,
-                time_control,
-                time_class,
-                game_type,
-                rated,
-                eco,
-                my_opening,
-                my_username,
-                my_rating,
-                my_result,
-                my_color,
-                opp_username,
-                opp_rating,
-                opp_result,
-                my_win_or_lose,
-                rating_diff,
-                my_time_left,
-                opp_time_left,
-                my_time_left_ratio,
-                opp_time_left_ratio,
-                time_spent,
-                my_moves,
-                opp_moves,
-                moves,
-                my_num_moves,
-                en_passant_count,
-                promotion_count,
-                my_castling,
-                opp_castling,
-                month,
-                weekday,
-                hour,
-                day_of_week,
-                unique_id,
-                uploaded_at,
-                CONCAT(my_username, '_', EXTRACT(YEAR FROM timestamp)) as username_year
-            FROM `{self.project_id}.{self.dataset_id}.{self.games_table}`
-            """
-            
-            # Execute the view creation
+            view_query = self._dashboard_view_sql(view_id)
+
             try:
                 self.client.query(view_query).result()
                 print(f"✅ Updated dynamic view: {view_name}")
@@ -529,59 +599,50 @@ class BigQueryDashboardManager:
             return None
 
     def create_user_specific_view(self, username: str, year: str = None) -> str:
-        """Create a user-specific view that only contains that user's data"""
+        """Create a per-user view filtered to that user's `username_year`.
+
+        Layered on top of `chess_games_dynamic_view` so the derivation logic
+        for `my_*` / `opp_*` lives in one place (`_dashboard_view_sql`). This
+        method is currently unused by the live /generate flow — it's kept as
+        a hook for ad-hoc dashboards.
+        """
         try:
             username_year = f"{username}_{year}" if year else username
             print(f"🔍 Creating user-specific view for: {username}, year: {year}, username_year: {username_year}")
-            
-            # Create a user-specific view name
-            view_name = f"user_data_{username}_{year}".replace('-', '_').replace('.', '_')
+
+            # Sanitize username for an identifier; year may be ALL/0000 sentinel
+            safe_user = ''.join(c if c.isalnum() else '_' for c in username)
+            safe_year = ''.join(c if c.isalnum() else '_' for c in str(year)) if year else 'all'
+            view_name = f"user_data_{safe_user}_{safe_year}"
             view_id = f"{self.project_id}.{self.dataset_id}.{view_name}"
-            
-            # Create a view that only contains this user's data
+            base_view = f"{self.project_id}.{self.dataset_id}.chess_games_dynamic_view"
+
             view_query = f"""
-            CREATE OR REPLACE VIEW `{view_id}`
-            AS SELECT 
-                *,
-                CONCAT(my_username, '_', EXTRACT(YEAR FROM timestamp)) as username_year
-            FROM `{self.project_id}.{self.dataset_id}.{self.games_table}`
-            WHERE username = '{username}'
+            CREATE OR REPLACE VIEW `{view_id}` AS
+            SELECT *
+            FROM `{base_view}`
+            WHERE username_year = @username_year
             """
-            
-            if year:
-                view_query += f" AND EXTRACT(YEAR FROM date) = {year}"
-            
-            # Execute the view creation
             try:
-                self.client.query(view_query).result()
+                job_config = bigquery.QueryJobConfig(query_parameters=[
+                    bigquery.ScalarQueryParameter("username_year", "STRING", username_year),
+                ])
+                self.client.query(view_query, job_config=job_config).result()
                 print(f"✅ Created user-specific view: {view_name}")
-                
-                # Verify the view has data
-                verify_query = f"""
-                SELECT COUNT(*) as count 
-                FROM `{view_id}`
-                """
-                result = self.client.query(verify_query).result()
-                for row in result:
-                    count = row.count
-                    print(f"📊 View contains {count} records for {username_year}")
-                    
             except Exception as e:
                 print(f"⚠️ View creation warning: {e}")
-            
-            # Return dashboard URL with the user-specific view
+
             dashboard_url = (
                 f"{self.dashboard_template_url}"
-                f"?ds={self.project_id}.{self.dataset_id}.{view_name}"
+                f"?ds={view_id}"
             )
-            
             logger.info(f"Created user-specific view URL for {username_year}: {dashboard_url}")
-            print(f"🔗 Generated view URL: {dashboard_url}")
             return dashboard_url
-            
+
         except Exception as e:
             logger.error(f"Failed to create user-specific view: {e}")
             print(f"❌ Error creating user-specific view: {e}")
-            # Fallback to regular dashboard
+            return self.dashboard_template_url
+
 # Global instance
 bigquery_dashboard = BigQueryDashboardManager() 

@@ -79,6 +79,67 @@ There is no test suite yet.
 
 ## Decision log (newest first)
 
+### 2026-05-12 — Looker dashboard re-pointed at `raw_games`
+- **Problem.** New games (e.g. `EdwardL903_2026`) never showed up in
+  Looker. `bigquery_dashboard.upload_raw_games(...)` was correctly
+  writing every /generate to `crucial-decoder-462021-m4.test1.raw_games`,
+  but the dashboard's `chess_games_dynamic_view` was still defined
+  `FROM ... .megachessdataset` — the legacy "everything flat" table we
+  stopped writing to in the 2026-05-09 cleanup. So 2026 data went into
+  `raw_games`, Looker read from a frozen `megachessdataset`, and
+  `username_year = "EdwardL903_2026"` matched zero rows.
+- **Why a one-line swap didn't work.** The view selected `my_username`,
+  `my_color`, `my_rating`, `my_opening`, `my_win_or_lose`, `rating_diff`,
+  `time_spent`, etc. — derived columns that pandas used to write into
+  `megachessdataset`. `raw_games` only has the API mirror columns
+  (`white_username`, `black_username`, …). The derived shape has to be
+  recomputed in SQL.
+- **Fix (Option A — fastest, no dbt dependency).** In
+  `api/bigquery_dashboard.py`:
+  - New private helper **`_dashboard_view_sql(view_id)`** builds the
+    full `CREATE OR REPLACE VIEW` on top of `raw_games`. Perspective is
+    derived from `loaded_by_user` (set in `upload_raw_games`):
+    `LOWER(white_username) = LOWER(loaded_by_user)` → user is white,
+    else black. `my_*` / `opp_*` are filled by `IF(_is_white, …, …)`.
+  - **ECO + `my_opening`** are extracted from PGN via
+    `REGEXP_EXTRACT(pgn, r'\[ECOUrl "https?://[^"]+/openings/([^"]+)"\]')`,
+    then truncated at the first keyword
+    (`Defense|Gambit|Opening|Game|Attack|System`). `my_opening` follows
+    the Python rule: white keeps non-Defense ECOs, black keeps Defense
+    ECOs, else `'N/A'`.
+  - **`my_win_or_lose`** uses the same draw set as Python
+    (`draw`, `stalemate`, `repetition`, `insufficient`,
+    `timevsinsufficient`, `agreed`, `50move`).
+  - **`username_year`** = `CONCAT(my_username, '_', EXTRACT(YEAR FROM timestamp))`,
+    same shape Looker filters on.
+  - PGN-deep fields (`my_moves`, `opp_moves`, `moves`, `my_num_moves`,
+    `my_time_left`, `opp_time_left`, `my_time_left_ratio`,
+    `opp_time_left_ratio`, `time_spent`, `en_passant_count`,
+    `promotion_count`, `*_castling`) are intentionally **`CAST(NULL …)`**
+    in the view so charts that reference them don't error; they need
+    per-player PGN parsing and land later via dbt.
+- **Call sites.** `create_user_specific_dashboard_url` and
+  `create_embed_dashboard_url` both call `_dashboard_view_sql` instead
+  of inlining the view DDL — they stay in sync. `create_user_specific_view`
+  (no live callers in /generate) was also fixed: it now layers on top of
+  `chess_games_dynamic_view` (instead of the broken `WHERE username = ...`
+  against the legacy table), sanitizes the view name, and returns the
+  template URL on error (was silently returning `None`).
+- **`self.games_table`** flipped from `"megachessdataset"` →
+  `"raw_games"` with an updated comment. The string isn't used in
+  query strings any more (replaced by explicit `raw_games`/view names);
+  it's effectively just a label until dbt lands.
+- **Verification.** `python -c "import app"` clean
+  (`✅ BigQuery dashboard system enabled`); `_dashboard_view_sql` returns
+  ~4.9 kB of SQL containing `raw_games`, `username_year`, `my_opening`,
+  `REGEXP_EXTRACT`. End-to-end is verified by the /generate flow itself:
+  every successful run rebuilds the view, so the next Looker query sees
+  the freshly-uploaded 2026 data.
+- **Future work.** dbt models (`stg_raw_games`, `int_player_games`,
+  `fct_chess_games`) will replace this view and fill in the
+  PGN-derived columns. Once that ships, `_dashboard_view_sql` and
+  `megachessdataset` can both go away.
+
 ### 2026-05-09 — Frontend UX pass (nav, form, dashboard, a11y)
 - **Year dropdown:** `buildChessWrappedYearOptions()` — calendar years from current year
   down to 2015 with **value === label** so the UI matches what `/generate` sends to
