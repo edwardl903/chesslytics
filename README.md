@@ -126,7 +126,7 @@ chesslyzer-experimental/
 ## Prerequisites
 
 - Python **3.13** (see `.python-version`)
-- Node **20+** (see `.nvmrc`)
+- Node **20.x** (see `.nvmrc` and `engines.node` in both `package.json` files)
 - A Google Cloud project with BigQuery enabled and a **service account
   key** (JSON) with `BigQuery Data Editor` + `BigQuery Job User` roles
 - (Optional) A Chess.com account / username to test against (the API is
@@ -254,29 +254,96 @@ Update those if you're pointing at a different project.
 ## Deployment
 
 This app is deployed to **Heroku**. Full walkthrough:
-[`HEROKU_DEPLOYMENT.md`](./HEROKU_DEPLOYMENT.md). Short version:
+[`HEROKU_DEPLOYMENT.md`](./HEROKU_DEPLOYMENT.md). The recipe below is the
+exact flow that produces a green deploy from a fresh clone.
+
+### 1. Create (or point at) the app
 
 ```bash
 heroku login
+
+# First time: create a new app
 heroku create your-chesslytics-app
 
-# Two buildpacks: Node first (builds React), then Python (installs Flask).
-# Order matters — Heroku runs `heroku-postbuild` (which runs `npm run build`
-# in frontend/) during the Node phase, then Flask serves the resulting
-# frontend/dist/ in production.
+# Already have a deployed app and want to push this repo to it?
+heroku git:remote -a your-chesslytics-app
+```
+
+### 2. Set buildpacks — Node FIRST, then Python
+
+Order matters. The Node buildpack runs root `package.json`'s
+`heroku-postbuild`, which runs `cd frontend && npm install && npm run build`
+and produces `frontend/dist/`. Without the Node buildpack first, the slug
+ships without the React bundle and every request returns a 503
+"Frontend not built" page.
+
+```bash
+heroku buildpacks:clear
 heroku buildpacks:set heroku/nodejs
 heroku buildpacks:add heroku/python
 
-# Push GCP credentials as env vars (the file itself is gitignored)
+# Verify
+heroku buildpacks
+# Expected:
+#   1. heroku/nodejs
+#   2. heroku/python
+```
+
+### 3. Tell npm to install dev dependencies during the build
+
+The Node buildpack sets `NODE_ENV=production`, which makes `npm install`
+skip `devDependencies`. Our build tools (`typescript`, `vite`,
+`@vitejs/plugin-react`) live in `frontend/package.json` `devDependencies`,
+so the build needs this override:
+
+```bash
+heroku config:set NPM_CONFIG_PRODUCTION=false
+```
+
+Symptom if you forget it: `sh: 1: tsc: not found` during
+`heroku-postbuild`.
+
+### 4. Set application config vars
+
+```bash
 heroku config:set GOOGLE_APPLICATION_CREDENTIALS_JSON="$(cat gcp/service_account.json)"
 heroku config:set GOOGLE_CREDENTIALS="$(cat gcp/service_account.json)"
 heroku config:set FLASK_ENV=production
+```
 
+Both `GOOGLE_*` vars must be set: `api/bigquery_dashboard.py` reads the
+first, `src/data/uploader.py` reads the second. Unifying them is on the
+roadmap.
+
+### 5. Push and verify
+
+```bash
 git push heroku main
+heroku logs --tail
 heroku open
 ```
 
+What a healthy build log looks like:
+
+- `-----> Using buildpacks: 1. heroku/nodejs  2. heroku/python`
+- `Resolving node version 20.x...` (no "wide range" warning)
+- `Running heroku-postbuild` → `> vite build` → `dist/index.html`
+- `-----> Python app detected` → `requirements.txt` install
+- `Starting process with command 'gunicorn app:app'`
+- `BigQuery Dashboard Manager initialized` and `BigQuery dashboard system enabled`
+
 There's also a helper script: `./deploy_to_heroku.sh`.
+
+### Troubleshooting
+
+| Symptom                                                | Fix                                                                                |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `503 Frontend not built` in browser                    | Node buildpack missing or running after Python. Re-run step 2, then push again.    |
+| `sh: 1: tsc: not found` in build log                   | `heroku config:set NPM_CONFIG_PRODUCTION=false`, then push again.                  |
+| Push says `Everything up-to-date`, no rebuild          | `git commit --allow-empty -m "rebuild"` then `git push heroku main`.               |
+| `! [rejected] main -> main (fetch first)`              | Old app history diverged from this repo. `git push heroku main --force` (replaces Heroku's `main` with your repo's). |
+| `Failed to initialize BigQuery client` at boot         | `GOOGLE_APPLICATION_CREDENTIALS_JSON` (and `GOOGLE_CREDENTIALS`) not set. Run step 4. |
+| "Wide range in `engines.node`" warning on build        | Pin to `"node": "20.x"` in both `package.json` files (already done in this repo).  |
 
 ---
 

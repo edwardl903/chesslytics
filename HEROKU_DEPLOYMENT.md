@@ -1,132 +1,232 @@
 # Heroku Deployment Guide for ChessLytics
 
-This guide will walk you through deploying your ChessLytics application to Heroku.
+ChessLytics is a Flask + React (Vite + TypeScript) app, so the slug needs
+**two buildpacks** in a specific order: Node first (to build the React
+bundle in `frontend/dist/`), then Python (to install Flask and run
+gunicorn). Missing either piece is the most common cause of failed
+deploys.
+
+This guide is the long-form companion to the [Deployment section of the
+README](./README.md#deployment). Follow it the first time you deploy or
+when reconnecting a fresh clone to an existing Heroku app.
+
+---
 
 ## Prerequisites
 
-1. **Heroku Account**: Sign up at [heroku.com](https://heroku.com)
-2. **Heroku CLI**: Install from [devcenter.heroku.com/articles/heroku-cli](https://devcenter.heroku.com/articles/heroku-cli)
-3. **Git**: Make sure your project is in a Git repository
+1. A Heroku account ([heroku.com](https://heroku.com)) with a verified
+   payment method (Heroku no longer has a free tier).
+2. The Heroku CLI:
+   ```bash
+   # macOS
+   brew tap heroku/brew && brew install heroku
 
-## Step 1: Install Heroku CLI
+   # Linux
+   curl https://cli-assets.heroku.com/install.sh | sh
+   ```
+   Windows: download the installer from
+   [devcenter.heroku.com/articles/heroku-cli](https://devcenter.heroku.com/articles/heroku-cli).
+3. Git, and a clone of this repo.
+4. A Google Cloud service account JSON with BigQuery `Data Editor` +
+   `Job User` roles (used by `api/bigquery_dashboard.py` and
+   `src/data/uploader.py`).
 
-### macOS (using Homebrew):
-```bash
-brew tap heroku/brew && brew install heroku
-```
+---
 
-### Windows:
-Download and run the installer from the Heroku website.
+## What's already in this repo for Heroku
 
-### Linux:
-```bash
-curl https://cli-assets.heroku.com/install.sh | sh
-```
+You don't need to add any of this — it's here for context.
 
-## Step 2: Login to Heroku
+- `Procfile` → `web: gunicorn app:app`
+- `requirements.txt` (Python deps; pinned, no `requirements.in`)
+- `package.json` (root) with `heroku-postbuild` that recurses into
+  `frontend/` and runs `npm install && npm run build`
+- `.nvmrc` pinning Node 20, plus `engines.node: "20.x"` in both
+  `package.json` files
+- `frontend/package.json` build scripts (`tsc -b && vite build`)
+- `app.py` serves `frontend/dist/index.html` at `/`, hashed bundles at
+  `/assets/*`, and SPA fallback for any unmatched GET so React Router
+  works on direct navigation.
+
+---
+
+## Step 1 — Log in
 
 ```bash
 heroku login
 ```
 
-This will open your browser to authenticate with Heroku.
+## Step 2 — Connect your repo to a Heroku app
 
-## Step 3: Prepare Your Application
-
-Your application is already prepared with the necessary files:
-- ✅ `Procfile` - Tells Heroku how to run your app
-- ✅ `requirements.txt` - Lists all Python dependencies
-- ✅ `app.py` - Your Flask application
-
-## Step 4: Create a Heroku App
-
-Navigate to your project directory and create a new Heroku app:
+Pick one:
 
 ```bash
-cd chesslyzer_wip
-heroku create your-chesslytics-app-name
+# Create a brand new app
+heroku create your-chesslytics-app
+
+# OR: you already have a deployed Chesslytics app and want to point
+# this clone at it
+heroku git:remote -a your-chesslytics-app
 ```
 
-Replace `your-chesslytics-app-name` with a unique name for your app.
-
-## Step 5: Set Up Environment Variables
-
-You'll need to configure your Google Cloud credentials as environment variables:
+Confirm the remote is set:
 
 ```bash
-# Set your Google Cloud service account key
-heroku config:set GOOGLE_APPLICATION_CREDENTIALS_JSON="$(cat gcp/service_account.json)"
+git remote -v
+# heroku  https://git.heroku.com/your-chesslytics-app.git (fetch)
+# heroku  https://git.heroku.com/your-chesslytics-app.git (push)
+```
 
-# Set any other environment variables you need
+## Step 3 — Set buildpacks (Node BEFORE Python)
+
+Order matters. Without the Node buildpack first, `heroku-postbuild`
+never runs and the slug ships with no `frontend/dist/` — every request
+then returns a 503 "Frontend not built" page from `app.py`.
+
+```bash
+heroku buildpacks:clear
+heroku buildpacks:set heroku/nodejs
+heroku buildpacks:add heroku/python
+
+heroku buildpacks
+# Expected:
+#   1. heroku/nodejs
+#   2. heroku/python
+```
+
+## Step 4 — Allow the build to install dev dependencies
+
+The Node buildpack sets `NODE_ENV=production`. `npm install` then skips
+`devDependencies`, where this project keeps `typescript`, `vite`, and
+`@vitejs/plugin-react`. Without these, the build fails with
+`sh: 1: tsc: not found`.
+
+```bash
+heroku config:set NPM_CONFIG_PRODUCTION=false
+```
+
+## Step 5 — Set application config vars
+
+```bash
+# Two env vars, same JSON. api/bigquery_dashboard.py reads the first,
+# src/data/uploader.py reads the second. Roadmap: unify these.
+heroku config:set GOOGLE_APPLICATION_CREDENTIALS_JSON="$(cat gcp/service_account.json)"
+heroku config:set GOOGLE_CREDENTIALS="$(cat gcp/service_account.json)"
+
 heroku config:set FLASK_ENV=production
 ```
 
-## Step 6: Deploy Your Application
+You can confirm with `heroku config`. Never commit
+`gcp/service_account.json` — it is `.gitignored`.
+
+## Step 6 — Deploy
 
 ```bash
-# Add all files to git (if not already done)
 git add .
-
-# Commit your changes
 git commit -m "Deploy to Heroku"
+git push heroku main          # or master if that's your default branch
+```
 
-# Push to Heroku
+If the push prints `Everything up-to-date`, your tree already matches
+Heroku's `main` and no new build will run. Force a rebuild with an empty
+commit:
+
+```bash
+git commit --allow-empty -m "trigger rebuild"
 git push heroku main
 ```
 
-If your default branch is `master` instead of `main`, use:
+If the push is rejected with `[rejected] main -> main (fetch first)`,
+Heroku's branch has unrelated history (e.g. from a previous repo
+deployed to the same app). To make this repo the new source of truth,
+force-push:
+
 ```bash
-git push heroku master
+git push heroku main --force
 ```
 
-## Step 7: Open Your Application
+This rewrites only Heroku's Git remote, not GitHub.
+
+## Step 7 — Verify
 
 ```bash
 heroku open
-```
-
-This will open your deployed application in your browser.
-
-## Step 8: Monitor Your Application
-
-```bash
-# View logs
 heroku logs --tail
-
-# Check app status
-heroku ps
-
-# Scale your app (if needed)
-heroku ps:scale web=1
 ```
+
+A healthy build log looks like:
+
+```
+-----> Using buildpacks:
+       1. heroku/nodejs
+       2. heroku/python
+-----> Node.js app detected
+       Resolving node version 20.x...
+       Downloading and installing node 20.x.x...
+-----> Build
+       Running heroku-postbuild
+       > cd frontend && npm install && npm run build
+       vite v5.x.x building for production...
+       dist/index.html ...
+       dist/assets/index-<hash>.js ...
+-----> Python app detected
+       Installing requirements with pip
+-----> Discovering process types
+       Procfile declares types -> web
+-----> Launching...
+       Released v__
+       https://your-chesslytics-app.herokuapp.com/ deployed to Heroku
+```
+
+A healthy boot log looks like:
+
+```
+Starting process with command `gunicorn app:app`
+[INFO] Starting gunicorn ...
+[INFO] Listening at: http://0.0.0.0:<port>
+[INFO] Booting worker with pid: ...
+BigQuery Dashboard Manager initialized
+BigQuery dashboard system enabled
+```
+
+Then `GET /` should return HTTP 200 with the React app HTML, not the
+503 placeholder.
+
+---
 
 ## Troubleshooting
 
-### Common Issues:
+| Symptom                                                | Cause                                                                                | Fix                                                                            |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Browser shows `503 Frontend not built`                 | `frontend/dist/` missing from the slug; Node buildpack never ran                     | Re-run Step 3, then push again                                                 |
+| Build fails with `sh: 1: tsc: not found`               | `NODE_ENV=production` made npm skip `devDependencies`                                | Re-run Step 4 (`NPM_CONFIG_PRODUCTION=false`), then push again                 |
+| Build warning "wide range in `engines.node`"           | `engines.node` was previously `>=20`                                                 | Already fixed in this repo (`"node": "20.x"`); rebase if you still see it      |
+| Push prints `Everything up-to-date`                    | Local `main` and Heroku `main` match; no new build triggered                         | `git commit --allow-empty -m "rebuild" && git push heroku main`                |
+| Push rejected: `[rejected] main -> main (fetch first)` | Heroku's `main` has different history (e.g. an older repo was last deployed to this app) | `git push heroku main --force` (overwrites only Heroku's remote)              |
+| Boot log: `Failed to initialize BigQuery client`       | Config vars not set                                                                  | Re-run Step 5 (both `GOOGLE_APPLICATION_CREDENTIALS_JSON` and `GOOGLE_CREDENTIALS`) |
+| `/generate` returns 500                                | The data pipeline subprocess failed; check `heroku logs --tail`                      | Look for the Python traceback printed under `tests/testing.py`                 |
 
-1. **Build Fails**: Check the logs with `heroku logs --tail`
-2. **App Crashes**: Make sure all dependencies are in `requirements.txt`
-3. **Environment Variables**: Verify they're set correctly with `heroku config`
+---
 
-### Useful Commands:
+## Useful commands
 
 ```bash
-# View all config variables
-heroku config
-
-# Run the app locally with Heroku environment
-heroku local web
-
-# Access Heroku bash
-heroku run bash
-
-# Restart the app
-heroku restart
+heroku config                    # list config vars
+heroku config:get GOOGLE_CREDENTIALS    # check a single var
+heroku logs --tail               # stream logs
+heroku ps                        # show dyno state
+heroku ps:scale web=1            # scale web dyno
+heroku restart                   # restart all dynos
+heroku run bash                  # open a one-off shell on a dyno
+heroku releases                  # list releases / rollback target
+heroku rollback v42              # roll back to a previous release
 ```
 
-## Updating Your Application
+---
 
-To deploy updates:
+## Updating
+
+Subsequent deploys are just:
 
 ```bash
 git add .
@@ -134,30 +234,24 @@ git commit -m "Update description"
 git push heroku main
 ```
 
-## Cost Considerations
+Buildpacks, env vars, and pinned Node version persist on the app, so
+the only step that runs is the build + release.
 
-- **Free Tier**: Heroku no longer offers a free tier
-- **Basic Dyno**: Starts at ~$7/month
-- **Hobby Dyno**: Good for small applications
-- **Standard Dyno**: For production applications
+---
 
-## Security Notes
+## Security notes
 
-1. **Service Account**: Your `service_account.json` is now stored as an environment variable
-2. **Secrets**: Never commit sensitive data to your repository
-3. **HTTPS**: Heroku automatically provides SSL certificates
+1. `gcp/service_account.json` and `.env` are `.gitignored`; never commit
+   them.
+2. Heroku gives every app HTTPS automatically.
+3. Rotate the BigQuery service account key periodically and re-run Step
+   5 when you do.
 
-## Next Steps
+---
 
-1. Set up a custom domain (optional)
-2. Configure monitoring and alerts
-3. Set up automatic deployments from GitHub
-4. Scale your application as needed
+## References
 
-## Support
-
-- [Heroku Documentation](https://devcenter.heroku.com/)
-- [Heroku Support](https://help.heroku.com/)
-- [Flask on Heroku](https://devcenter.heroku.com/articles/python-gunicorn)
-
-Your ChessLytics application should now be live on Heroku! 🎉 
+- [Heroku Dev Center](https://devcenter.heroku.com/)
+- [Heroku Node.js buildpack](https://devcenter.heroku.com/articles/nodejs-support)
+- [Heroku Python buildpack](https://devcenter.heroku.com/articles/python-support)
+- [Multiple buildpacks](https://devcenter.heroku.com/articles/using-multiple-buildpacks-for-an-app)
