@@ -1,0 +1,39 @@
+---
+description: dbt conventions for chesslytics_dbt — SQL models, YAML, and Jinja
+globs: chesslytics_dbt/**
+alwaysApply: false
+---
+
+# dbt Conventions (chesslytics_dbt)
+
+## Project facts
+- Profile: `chesslytics_dbt` in `~/.dbt/profiles.yml`, `location: us-central1`.
+- All models land in dataset `test1` (no `+schema:` overrides — avoids region-mismatch on separate datasets).
+- Run: `cd chesslytics_dbt && dbt compile` after edits, then `dbt run`.
+
+## Model layer rules
+| Layer | Materialization | Rule |
+|---|---|---|
+| `staging/` | `view` | Rename/filter only. No business logic. |
+| `intermediate/` | `table` | Player-perspective, ECO, derived fields. No mart aggregations. |
+| `marts/` | `table` or `incremental` | Final shape for BI. Use `merge` strategy with `unique_key`. |
+
+## Incremental models
+- `fct_games`: watermark on `uploaded_at` → `MAX(loaded_at)`.
+- `fct_user_statistics`: watermark on `stat_date` → `MAX(stat_date)`.
+- `merge_update_columns` must list the **output alias names**, not internal CTE names.
+
+## UNION over `var('username')`
+`int_player_games` UNIONs white + black rows so every user is always in the table. Do NOT switch to `var('username')` — it would require a separate run per user and break multi-user marts.
+
+## Jinja gotchas
+- Never put SQL `--` comments inside `{{ config(...) }}` blocks — Jinja parse error.
+- Use `{# Jinja comments #}` inside config blocks if needed.
+- After any model edit: `dbt compile` before `dbt run`.
+
+## Source vs staging tests
+- `sources.yml` tests: only `not_null` on columns that are actually never null in raw data (`uuid`, `uploaded_at`).
+- Uniqueness and non-null player fields are enforced on `stg_raw_games`, not on the source — `raw_games` is append-only and has ~19k partial rows.
+
+## Surrogate keys
+Use `dbt_utils.generate_surrogate_key([...])`. For keys in the final SELECT that join to another CTE, qualify the columns: `['c.username', 'c.stat_date']` not `['username', 'stat_date']`.

@@ -1,0 +1,20 @@
+# Copy this block into ~/.dbt/profiles.yml (merge with any existing profiles).
+# The top-level key MUST match `profile:` in dbt_project.yml → chesslytics_dbt
+#
+#   cp profiles.yml.example ~/.dbt/profiles.yml   # only if you have no profiles yet
+#   # or paste the chesslytics_dbt: section into ~/.dbt/profiles.yml
+
+chesslytics_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: crucial-decoder-462021-m4
+      dataset: test1
+      keyfile: /absolute/path/to/chesslyzer-experimental/gcp/service_account.json
+      # Must match the region of your raw_games dataset (check: bq show --format=pretty crucial-decoder-462021-m4:test1)
+      location: us-central1
+      priority: interactive
+      threads: 4
+      timeout_seconds: 300

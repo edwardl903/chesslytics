@@ -19,11 +19,16 @@ BigQuery.
                                                  ▼
 Chess.com API ──▶ Flask app (app.py) ──▶ BigQuery (raw_games)
                        │                       │
-                       ├─▶ Pandas processing   └─▶ dbt models (planned)
-                       │     ├─ statistics JSON          │
-                       │     ├─ matplotlib PNGs          ▼
-                       │     └─ CSV / XLSX export   Looker Studio dashboard
-                       │                            (iframed in the React app)
+                       ├─▶ Pandas processing   └─▶ dbt project (chesslytics_dbt/)
+                       │     ├─ statistics JSON       stg_raw_games (view)
+                       │     ├─ matplotlib PNGs         → int_player_games
+                       │     └─ CSV / XLSX export         → dim_users
+                       │                                  → fct_games (incremental)
+                       │                                  → fct_user_statistics
+                       │                                       │
+                       │                                       ▼
+                       │                              Looker Studio dashboard
+                       │                              (iframed in the React app)
                        └─▶ Serves built React bundle from frontend/dist
 ```
 
@@ -42,16 +47,9 @@ Chess.com API ──▶ Flask app (app.py) ──▶ BigQuery (raw_games)
 4. The React app (`frontend/`, Vite + TypeScript) renders the stats grid,
    special game highlights, and the embedded dashboard.
 
-The intent is to migrate transformations out of pandas and into **dbt**
-running on top of `raw_games`. See the dbt docs in this repo:
-
-- [`DBT_QUICK_START.md`](./DBT_QUICK_START.md)
-- [`DBT_PROJECT_STRUCTURE.md`](./DBT_PROJECT_STRUCTURE.md)
-- [`DBT_MIGRATION_NOTES.md`](./DBT_MIGRATION_NOTES.md)
-- [`RAW_API_SCHEMA.md`](./RAW_API_SCHEMA.md)
-- [`RAW_DATA_UPLOAD.md`](./RAW_DATA_UPLOAD.md)
-- [`TRANSFORMATION_ANALYSIS.md`](./TRANSFORMATION_ANALYSIS.md)
-- [`SQL_EXAMPLES.md`](./SQL_EXAMPLES.md)
+Transformations are being migrated out of pandas and into **dbt**
+running on top of `raw_games`. The dbt project lives at `chesslytics_dbt/`
+and is fully operational — see the [dbt section](#dbt) below.
 
 ---
 
@@ -106,15 +104,25 @@ chesslyzer-experimental/
 ├── gcp/
 │   └── service_account.json     # GCP credentials (gitignored)
 │
-└── docs:
-    ├── DBT_QUICK_START.md
-    ├── DBT_PROJECT_STRUCTURE.md
-    ├── DBT_MIGRATION_NOTES.md
-    ├── RAW_API_SCHEMA.md
-    ├── RAW_DATA_UPLOAD.md
-    ├── TRANSFORMATION_ANALYSIS.md
-    ├── SQL_EXAMPLES.md
-    └── HEROKU_DEPLOYMENT.md
+├── chesslytics_dbt/             # dbt project (BigQuery adapter)
+│   ├── dbt_project.yml          # profile: chesslytics_dbt, all models in test1 dataset
+│   ├── packages.yml             # dbt-labs/dbt_utils
+│   ├── profiles.yml.example     # copy to ~/.dbt/profiles.yml, set location: us-central1
+│   └── models/
+│       ├── staging/
+│       │   ├── sources.yml      # declares test1.raw_games as source
+│       │   ├── stg_raw_games.sql  # view: clean, rename, filter null rows
+│       │   └── schema.yml
+│       ├── intermediate/
+│       │   ├── int_player_games.sql  # table: UNION white/black → player-perspective
+│       │   └── schema.yml
+│       └── marts/
+│           ├── dim_users.sql          # table: one row per player + pre-agg stats
+│           ├── fct_games.sql          # incremental: grain = game × player
+│           ├── fct_user_statistics.sql # incremental: grain = player × date × time_class
+│           └── schema.yml
+│
+└── HEROKU_DEPLOYMENT.md
 ```
 
 > Note: the directory is named `tests/` for historical reasons but the
@@ -244,7 +252,7 @@ The BigQuery project / dataset / table names are currently hard-coded in
 ```python
 self.project_id  = "crucial-decoder-462021-m4"
 self.dataset_id  = "test1"
-self.games_table = "megachessdataset"
+self.games_table = "raw_games"
 ```
 
 Update those if you're pointing at a different project.
@@ -347,26 +355,61 @@ There's also a helper script: `./deploy_to_heroku.sh`.
 
 ---
 
-## dbt (planned / in-progress)
+## dbt
 
-The Python pipeline currently writes both raw and transformed data to
-BigQuery. The migration plan is:
+The `chesslytics_dbt/` project is **fully operational**. It builds a
+clean analytics layer on top of the raw `test1.raw_games` BigQuery table.
 
-1. Keep `raw_games` as the only Python-written table (already done).
-2. Move all transformations into a sibling dbt project (`stg_*`,
-   `int_*`, `fct_*`, `dim_*`).
-3. Point Looker Studio at the dbt mart tables instead of the
-   pandas-generated ones.
-
-To start the dbt project:
+### Running the dbt project
 
 ```bash
-pip install dbt-bigquery
-dbt init chesslytics-dbt
+# One-time setup
+pip install dbt-bigquery           # if not already installed
+cp chesslytics_dbt/profiles.yml.example ~/.dbt/profiles.yml
+# → edit keyfile path and confirm location: us-central1
+
+# Install packages
+cd chesslytics_dbt
+dbt deps
+
+# Build all models
+dbt run
+
+# Run tests (44 data tests)
+dbt test
+
+# View docs in browser (http://localhost:8080)
+dbt docs generate && dbt docs serve
 ```
 
-See [`DBT_QUICK_START.md`](./DBT_QUICK_START.md) for the recommended
-profile and model layout.
+### Model DAG
+
+```
+raw_games (BigQuery source)
+    └── stg_raw_games [view]           ← clean + filter null rows
+            └── int_player_games [table]  ← UNION player perspective
+                    ├── dim_users [table]
+                    ├── fct_games [incremental]
+                    └── fct_user_statistics [incremental]
+```
+
+### What each model does
+
+| Model | Materialization | Grain | Notes |
+|---|---|---|---|
+| `stg_raw_games` | view | 1 row / game | Filters ~19k null-username rows from raw |
+| `int_player_games` | table | 1 row / (game, player) | UNION white+black; adds outcome, ECO, username_year |
+| `dim_users` | table | 1 row / username | Pre-agg: current/peak rating, win rate, per-time-class counts |
+| `fct_games` | incremental (merge) | 1 row / (game, player) | Monthly partitions, clustered by username + time_class |
+| `fct_user_statistics` | incremental (merge) | 1 row / (user, date, time_class) | Daily + cumulative totals, running peak rating |
+
+### BigQuery target
+
+- **Project:** `crucial-decoder-462021-m4`
+- **Dataset:** `test1` (region: `us-central1`)
+- **Profile location must be `us-central1`** — the dataset is NOT in
+  the multi-region `US` bucket. The `profiles.yml.example` already
+  has this set correctly.
 
 ---
 
@@ -396,8 +439,9 @@ profile and model layout.
       Vitest + React Testing Library for `frontend/src`.
 - [ ] Unify the two BigQuery credential env vars
       (`GOOGLE_CREDENTIALS` vs `GOOGLE_APPLICATION_CREDENTIALS_JSON`).
-- [ ] Move `clean_dataframe` transformations into dbt (see
-      `TRANSFORMATION_ANALYSIS.md`).
+- [ ] Point Looker Studio at `fct_games` / `fct_user_statistics` instead
+      of the interim `chess_games_dynamic_view`.
+- [ ] Clean up ~19k null-username and ~3.8k duplicate-UUID rows in `raw_games`.
 - [ ] Replace `subprocess.run` from `app.py` with a direct import of the
       pipeline.
 - [ ] Mobile polish: further tighten `frontend/src/styles/global.css` or

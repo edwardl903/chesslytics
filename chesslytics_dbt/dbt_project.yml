@@ -1,0 +1,39 @@
+name: 'chesslytics_dbt'
+version: '1.0.0'
+config-version: 2
+
+profile: 'chesslytics_dbt'
+
+model-paths:   ["models"]
+analysis-paths: ["analyses"]
+test-paths:    ["tests"]
+seed-paths:    ["seeds"]
+macro-paths:   ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# ---------------------------------------------------------------------------
+# Default variables — override on the CLI or in dbt Cloud env
+# ---------------------------------------------------------------------------
+vars:
+  # Default user for ad-hoc runs. The mart models work for ALL users; this
+  # variable is only used by one-off analysis queries in analyses/.
+  default_username: "EdwardL903"
+
+# ---------------------------------------------------------------------------
+# Model materializations by folder
+# ---------------------------------------------------------------------------
+models:
+  chesslytics_dbt:
+    # All models land in profile dataset `test1` (same dataset/region as raw_games).
+    # Avoids separate test1_staging / test1_marts datasets and region mismatches.
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: table
+    marts:
+      +materialized: table
+      # fct_* models override to incremental in their .sql files

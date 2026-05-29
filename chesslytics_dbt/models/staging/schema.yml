@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: stg_raw_games
+    description: >
+      Cleaned and renamed staging view over raw_games.
+      One row per unique Chess.com game. No player-perspective logic.
+
+    columns:
+      - name: game_id
+        description: UUID primary key (from Chess.com API)
+        tests:
+          - not_null
+          - unique
+
+      - name: game_url
+        description: Full game URL
+
+      - name: game_end_timestamp
+        description: Game end as a TIMESTAMP (parsed from Unix end_time)
+        tests:
+          - not_null
+
+      - name: game_date
+        description: Game end date (DATE)
+        tests:
+          - not_null
+
+      - name: game_year
+        description: Calendar year of game end
+        tests:
+          - not_null
+
+      - name: game_month
+        description: Calendar month (1–12) of game end
+
+      - name: time_class
+        description: "Time control class: blitz | rapid | bullet | daily"
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['blitz', 'rapid', 'bullet', 'daily', 'correspondence']
+
+      - name: rated
+        description: Whether the game was rated
+
+      - name: white_username
+        description: White player username
+        tests:
+          - not_null
+
+      - name: black_username
+        description: Black player username
+        tests:
+          - not_null
+
+      - name: uploaded_at
+        description: BigQuery insert timestamp
+        tests:
+          - not_null

@@ -1,0 +1,36 @@
+---
+description: React/TypeScript/CSS conventions for the frontend SPA
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend Conventions (React + Vite + TypeScript)
+
+## Stack
+- React 18, Vite, TypeScript. Entry: `frontend/src/main.tsx`. Router in `App.tsx`.
+- Routing: `react-router-dom`. Non-home routes (`/about`, `/opening-analyzer`, etc.) render `ComingSoonPage`.
+- Global stylesheet: `frontend/src/styles/global.css` (single file, ~30 KB — CSS Modules is a future migration).
+
+## Type safety
+- Every field in Flask's `/generate` `response_data` dict must have a matching type in `frontend/src/types/stats.ts`.
+- Run `npm run typecheck` in `frontend/` before committing any TypeScript change.
+
+## Dev workflow
+- Two processes: `python app.py` (:5001) + `cd frontend && npm run dev` (:5173).
+- Vite proxies `/generate`, `/api/*`, `/static/*` to Flask — no CORS config needed locally.
+- For production-mode testing: `cd frontend && npm run build` → `python app.py` → http://localhost:5001.
+
+## Static assets
+- Generated chart PNGs live in `static/images/` (gitignored, regenerated per request).
+- Permanent assets (`background.jpg`, `gift2.png`, etc.) are in `static/` and served by Flask at `/static/*`.
+- Reference them by URL (`/static/background.jpg`), not by import.
+
+## Image export (html2canvas)
+- `captureRef` is on `.stats-capture-inner` (profile header + stat grid only).
+- Background color inferred from the element; falls back to `#2d6056` if transparent.
+- Do not re-add `applyExportStyles` / `restoreStyles` — these were removed intentionally.
+
+## Heroku build
+- Node buildpack must be listed **before** Python.
+- `NPM_CONFIG_PRODUCTION=false` must be set so `devDependencies` (tsc, vite) are installed.
+- Node version pinned to `20.x` in both `package.json` files.

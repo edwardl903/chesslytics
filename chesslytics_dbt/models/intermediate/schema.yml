@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: int_player_games
+    description: >
+      Player-perspective game data. Each source game produces two rows
+      (one for white, one for black), so every player's history is
+      available without needing per-user dbt runs.
+      Grain: one row per (game_id, player).
+
+    columns:
+      - name: player_game_key
+        description: Surrogate key — MD5(game_id, my_username). Natural PK for this model.
+        tests:
+          - not_null
+          - unique
+
+      - name: game_id
+        description: UUID from Chess.com (FK to stg_raw_games.game_id)
+        tests:
+          - not_null
+
+      - name: my_username
+        description: The player whose perspective this row represents
+        tests:
+          - not_null
+
+      - name: my_color
+        description: "'white' or 'black'"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['white', 'black']
+
+      - name: my_rating
+        description: Player's rating at game start
+
+      - name: outcome
+        description: "Categorized result: win | draw | lose"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['win', 'draw', 'lose']
+
+      - name: my_opening
+        description: >
+          Opening from player perspective (white = non-Defense opening,
+          black = Defense opening, otherwise 'N/A')
+
+      - name: eco
+        description: Opening ECO slug truncated at first major keyword
+
+      - name: username_year
+        description: "Looker filter key — e.g. 'EdwardL903_2026'"
+        tests:
+          - not_null
+
+      - name: game_date
+        description: Date the game ended (DATE)
+        tests:
+          - not_null
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"

@@ -1,0 +1,133 @@
+version: 2
+
+models:
+  # ── dim_users ──────────────────────────────────────────────────────────
+  - name: dim_users
+    description: >
+      User dimension table. One row per unique Chess.com username.
+      Pre-aggregated stats for fast BI lookups.
+
+    columns:
+      - name: user_key
+        description: Surrogate primary key (MD5 of username)
+        tests:
+          - not_null
+          - unique
+
+      - name: username
+        description: Chess.com username (natural key)
+        tests:
+          - not_null
+          - unique
+
+      - name: current_rating
+        description: Rating on the user's most recent game
+
+      - name: peak_rating
+        description: Highest rating ever recorded across all games
+
+      - name: total_games
+        description: Total number of games played (all time classes)
+
+      - name: win_rate
+        description: total_wins / total_games (0–1)
+
+  # ── fct_games ──────────────────────────────────────────────────────────
+  - name: fct_games
+    description: >
+      Games fact table. Grain: one row per (game_id, player).
+      Partitioned by game_date (monthly) and clustered by my_username +
+      time_class for fast Looker queries.
+      Incremental — new games merged on player_game_key.
+
+    columns:
+      - name: player_game_key
+        description: Surrogate PK — MD5(game_id, my_username)
+        tests:
+          - not_null
+          - unique
+
+      - name: game_id
+        description: UUID from Chess.com
+        tests:
+          - not_null
+
+      - name: user_key
+        description: FK to dim_users.user_key
+
+      - name: my_username
+        description: Player perspective username
+        tests:
+          - not_null
+
+      - name: outcome
+        description: "win | draw | lose"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['win', 'draw', 'lose']
+
+      - name: my_color
+        description: "white | black"
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['white', 'black']
+
+      - name: game_date
+        description: Game end date
+        tests:
+          - not_null
+
+      - name: username_year
+        description: "Looker filter key — e.g. 'EdwardL903_2026'"
+        tests:
+          - not_null
+
+  # ── fct_user_statistics ────────────────────────────────────────────────
+  - name: fct_user_statistics
+    description: >
+      Daily per-user per-time-class statistics.
+      Grain: (username, stat_date, time_class).
+      Includes both daily and cumulative totals.
+      Incremental — merges on stat_key.
+
+    columns:
+      - name: stat_key
+        description: Surrogate PK — MD5(username, stat_date, time_class)
+        tests:
+          - not_null
+          - unique
+
+      - name: username
+        description: Chess.com username
+        tests:
+          - not_null
+
+      - name: stat_date
+        description: Date the statistics are for
+        tests:
+          - not_null
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['blitz', 'rapid', 'bullet', 'daily', 'correspondence']
+
+      - name: games_played
+        description: Games played on this date in this time class
+        tests:
+          - not_null
+
+      - name: total_games
+        description: Cumulative games played up to and including stat_date
+
+      - name: current_rating
+        description: Rating on the last game of the day
+
+      - name: highest_rating_ever
+        description: Peak rating up to and including stat_date (running max)

@@ -1,0 +1,26 @@
+---
+description: Core Chesslytics project conventions — read before making any change
+alwaysApply: true
+---
+
+# Chesslytics — Core Conventions
+
+Full context lives in `.cursor/skills/chesslytics-context/SKILL.md`. Read it first on any non-trivial change.
+
+## Hard rules
+- **Never commit** `gcp/service_account.json`, `.env`, `data/`, `static/images/`, `venv/`.
+- **Python 3.13** only (`python3.13 -m venv venv`). `python3` resolves to 3.14 on this machine.
+- **All network calls** in `src/data/processor.py` must use `_session.get(...)` (the module-level `CachedSession`), never `requests.get`.
+- **Cache TTL rule:** past months = `NEVER_EXPIRE`, anything that can change today = 300 s.
+
+## BigQuery target
+- Project: `crucial-decoder-462021-m4`, dataset: `test1`, region: **`us-central1`** (not multi-region `US`).
+- Raw table: `raw_games`. dbt mart tables: `int_player_games`, `dim_users`, `fct_games`, `fct_user_statistics`.
+- Two GCP env vars do the same thing (`GOOGLE_APPLICATION_CREDENTIALS_JSON` + `GOOGLE_CREDENTIALS`). Set both until unified.
+
+## New dependencies
+- Python: pin to exact version in `requirements.txt` (`pkg==X.Y.Z`).
+- Frontend: `cd frontend && npm install <pkg>` (lockfile-managed).
+
+## /generate contract
+- Adding a new field to `response_data` in `app.py`? Update `frontend/src/types/stats.ts` in the same change.

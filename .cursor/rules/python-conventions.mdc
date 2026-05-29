@@ -1,0 +1,30 @@
+---
+description: Python conventions for the Flask backend and data pipeline
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python Conventions
+
+## HTTP / Chess.com API
+- Always use `_session.get(...)` from the module-level `CachedSession` in `src/data/processor.py`.
+- TTL: `NEVER_EXPIRE` for completed months, `300` for current month and `/archives` index.
+- `ThreadPoolExecutor(max_workers=8)` for concurrent monthly fetches; per-call exponential backoff on 429.
+
+## BigQuery uploads
+- Raw upload path: `api/bigquery_dashboard.py → upload_raw_games()`. This is the **only** correct upload path — it expects nested Chess.com API dicts (with `game["white"]`, `game["black"]`).
+- Never pass already-flattened rows (CSV dicts) to `upload_raw_games` — every player/accuracy field will be `None`.
+- Deduplication happens inside `upload_raw_games` via `get_existing_uuids()`. Do not dedupe before calling it.
+
+## DataFrame processing
+- `clean_dataframe` in `src/data/processor.py` uses `np.where` (vectorized). Do not reintroduce `iterrows()`.
+- Any column that flows into `json.dump` must be covered by the `_json_default` helper in `tests/testing.py` (handles numpy scalars, `pd.Timestamp`, `datetime`, `pd.Timedelta`).
+
+## Error handling
+- Don't swallow exceptions with a bare `except: print(...)`. Use `logger.error(...)` at minimum so errors surface in production logs.
+- Flask request handler BigQuery errors: log at `error` level and return a 500 with a message, not a silent `None`.
+
+## Flask
+- `app.py` shells out to `tests/testing.py` via `subprocess` (known debt — TODO: import directly).
+- SPA fallback: any unmatched GET returns `frontend/dist/index.html`.
+- `PORT` env var is respected (defaults 5001). Never hard-code the port.

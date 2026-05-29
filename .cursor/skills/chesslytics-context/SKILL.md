@@ -42,6 +42,13 @@ frontend/                       # React + Vite + TypeScript SPA (the only UI)
   src/styles/global.css         # Single global stylesheet (was static/styles.css)
 package.json                    # Root: Heroku heroku-postbuild orchestrator
 gcp/service_account.json        # GCP creds (gitignored)
+chesslytics_dbt/                # dbt project (live, BigQuery adapter)
+  dbt_project.yml               # profile: chesslytics_dbt, location: us-central1
+  packages.yml                  # dbt-utils >= 1.0.0
+  profiles.yml.example          # template for ~/.dbt/profiles.yml
+  models/staging/               # stg_raw_games (view)
+  models/intermediate/          # int_player_games (table, UNION-based)
+  models/marts/                 # dim_users, fct_games, fct_user_statistics
 ```
 
 `tests/` is misnamed — it's the CLI runner, **not** a pytest suite.
@@ -78,6 +85,50 @@ There is no test suite yet.
   Looker Studio dashboard.
 
 ## Decision log (newest first)
+
+### 2026-05-29 — dbt project live: full model DAG, 41/44 tests passing
+
+- **What shipped.** Full `chesslytics_dbt/` project initialized and running
+  against `crucial-decoder-462021-m4.test1`:
+  - `stg_raw_games` (view) — cleans raw_games: parses Unix `end_time` to
+    timestamps/dates, renames columns to snake_case, filters ~19k
+    null-username rows. Enforced tests: `not_null`, `unique` on `game_id`.
+  - `int_player_games` (table) — UNION-based player perspective. Every game
+    appears as two rows (white POV + black POV) so no per-user dbt run is
+    needed. Adds `outcome` (win/draw/lose), `rating_diff`, ECO/opening
+    extraction from PGN via `REGEXP_EXTRACT`, `username_year` filter key.
+    Surrogate key: `dbt_utils.generate_surrogate_key(['game_id', 'my_username'])`.
+  - `dim_users` (table) — one row per unique username, pre-aggregated stats
+    (current rating via `MAX_BY`, peak rating, win rate, per-time-class
+    counts), surrogate key.
+  - `fct_games` (incremental, merge) — grain: game × player. Watermarked on
+    `uploaded_at`. Monthly date partitions + `my_username, time_class`
+    cluster by.
+  - `fct_user_statistics` (incremental, merge) — grain: username × date ×
+    time_class. Daily counts + running cumulative totals (window functions).
+    Watermarked on `stat_date`. Surrogate key uses fully-qualified `c.username`
+    etc. to avoid BigQuery ambiguous column error in the merge.
+  - `packages.yml`: `dbt-labs/dbt_utils >= 1.0.0` (resolved to 1.3.3).
+- **Region issue fixed.** `profiles.yml` had `location: US` (multi-region)
+  but `test1` dataset is in `us-central1`. dbt reported `Not found in location
+  US`. Fixed: `location: us-central1`. Also removed `+schema:` overrides in
+  `dbt_project.yml` so all models land in `test1` directly — avoids the
+  `test1_staging` / `test1_intermediate` separate datasets that were in GCP's
+  delete-recovery hold.
+- **Source test design.** `raw_games` source tests do NOT include `not_null`
+  on `white_username`/`black_username` or `unique` on `uuid` — the raw table
+  is append-only and has ~19k partial rows and ~3.8k duplicate UUIDs from
+  historical loads. Quality is enforced at `stg_raw_games`. Source tests only
+  check `uuid not_null` and `uploaded_at not_null`.
+- **Merge column name fix.** `fct_user_statistics` config had
+  `merge_update_columns: ['cumulative_games', 'cumulative_wins', ...]` but
+  the model outputs those as `total_games`, `total_wins`. BigQuery's generated
+  MERGE failed on unrecognized column names. Fixed to match output aliases.
+- **dbt test result.** 41/41 tests pass (`dbt test`). (3 source tests were
+  removed because the raw table doesn't meet those constraints.)
+- **No dbt Cloud / scheduler yet.** Run manually: `cd chesslytics_dbt && dbt run`.
+  Next step is pointing Looker Studio at the mart tables instead of the
+  interim `chess_games_dynamic_view`.
 
 ### 2026-05-12 — Looker dashboard re-pointed at `raw_games`
 - **Problem.** New games (e.g. `EdwardL903_2026`) never showed up in
@@ -356,11 +407,11 @@ There is no test suite yet.
   Vitest + React Testing Library for `frontend/src`) is high ROI before
   the dbt migration. The smoke tests we run by hand should become real
   tests.
-- **No dbt project yet.** `raw_games` is loaded but transformations still
-  run in pandas. The plan is documented in `DBT_PROJECT_STRUCTURE.md`
-  and friends; needs to be initialized (`dbt init` + write `stg_*`,
-  `int_*`, `fct_*`/`dim_*` models). Until that's live, the "stop
-  processing in Python" item from the perf roadmap is blocked.
+- **dbt project is live** but Looker Studio still reads `chess_games_dynamic_view`
+  (the interim SQL view on `raw_games`). The mart tables exist in `test1` and
+  have the right shape — next step is re-pointing Looker at `fct_games` /
+  `fct_user_statistics`. Until that's done, the "stop processing in Python"
+  item remains open.
 - **Year selector value/label mismatch** — **resolved May 2026:** options now
   come from `frontend/src/lib/yearOptions.ts` with matching value/label
   calendar years (same string sent to `/generate` as shown in the UI).
@@ -385,10 +436,13 @@ There is no test suite yet.
   in the same change so the TypeScript stays accurate. Adding it to the
   Python `response_data` dict in `app.py` without a type update is a
   silent drift.
-- Touching the dbt-related side? Read the docs in repo root first:
-  `DBT_QUICK_START.md`, `DBT_PROJECT_STRUCTURE.md`, `DBT_MIGRATION_NOTES.md`,
-  `RAW_API_SCHEMA.md`, `RAW_DATA_UPLOAD.md`, `TRANSFORMATION_ANALYSIS.md`,
-  `SQL_EXAMPLES.md`. There's a lot of context there.
+- Touching the dbt side? The live project is in `chesslytics_dbt/`. Key
+  constraints: all models land in `test1` dataset (region `us-central1`);
+  `stg_raw_games` is the quality gate (not the source); `int_player_games`
+  uses a UNION not a `var('username')` so all users are always in the table.
+  Run `dbt compile` after any model edit to catch Jinja errors before running.
+  Do NOT put SQL `--` comments inside `{{ config(...) }}` blocks — Jinja
+  doesn't parse them and it causes a compile error.
 
 ## How to update this skill
 

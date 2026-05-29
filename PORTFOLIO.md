@@ -6,7 +6,7 @@
 
 **Live demo:** _(add your Heroku URL here)_
 **Code:** _(add your GitHub URL here)_
-**Stack:** Python · Flask · pandas · BigQuery · dbt · Looker Studio · matplotlib · Heroku
+**Stack:** Python · Flask · pandas · BigQuery · dbt (BigQuery adapter) · Looker Studio · React · Vite · TypeScript · matplotlib · Heroku
 
 ---
 
@@ -65,9 +65,13 @@ The app is deployed on Heroku and runs against a real GCP project.
                               public/index.html    Looker Studio
                               (renders results)    (embedded, filtered)
                                                           │
-                                                          ▼
-                                                 (planned) dbt models:
-                                                  stg_* → int_* → fct_*
+                                                 ▼
+                                     dbt project (chesslytics_dbt/):
+                                      stg_raw_games (view)
+                                       → int_player_games (table)
+                                         → dim_users
+                                         → fct_games (incremental)
+                                         → fct_user_statistics (incremental)
 ```
 
 Two-pronged data flow on purpose:
@@ -133,14 +137,39 @@ The schema flattens nested objects (`white`, `black`, `accuracies`)
 to top-level columns so dbt can address them in plain SQL — see
 `api/bigquery_dashboard.py::flatten_raw_game`.
 
-### 3. Per-user Looker Studio dashboards via embed config
+### 3. Full dbt project on top of BigQuery
+
+The `chesslytics_dbt/` project (dbt 1.11, BigQuery adapter) builds a
+clean analytics layer on top of the raw `raw_games` table:
+
+- **`stg_raw_games`** (view) — parses Unix timestamps to dates, renames
+  columns, filters ~19k rows with null player data.
+- **`int_player_games`** (table) — UNION-based player-perspective: every
+  game appears twice (once as white, once as black), so all 6.2k unique
+  users are in the table without per-user dbt runs. Adds `outcome`
+  (win/draw/lose), `rating_diff`, ECO opening extraction from PGN via
+  regex, `username_year` filter key.
+- **`dim_users`** (table) — one row per player; pre-aggregated current
+  rating, peak rating, win rate, per-time-class counts via surrogate key.
+- **`fct_games`** (incremental, merge) — grain: game × player. Monthly
+  date partitions + `my_username + time_class` clusters for fast Looker
+  queries. Watermarked on `uploaded_at` so re-runs are cheap.
+- **`fct_user_statistics`** (incremental, merge) — daily per-user per
+  time-class stats with cumulative totals and running peak-rating window
+  functions; grain: username × date × time_class.
+
+All 44 dbt tests pass. The staging model is the enforced quality gate —
+the source table is append-only and not fully clean, so constraints live
+on `stg_raw_games`, not on `raw_games`.
+
+### 4. Per-user Looker Studio dashboards via embed config
 
 The single Looker Studio report is parameterized by `username_year`. The
 Flask backend builds an embed configuration that pre-filters the report
 to the requested user and year, then the frontend embeds it. One
 dashboard, infinite users, no per-user dashboard provisioning.
 
-### 4. Dual-credential GCP loading
+### 5. Dual-credential GCP loading
 
 To support both local development and Heroku without code changes, the
 BigQuery client tries env-var-based credentials first
@@ -148,7 +177,7 @@ BigQuery client tries env-var-based credentials first
 Heroku config var) then falls back to the local `gcp/service_account.json`
 file. See `api/bigquery_dashboard.py::_get_bigquery_client`.
 
-### 5. Repo hygiene
+### 6. Repo hygiene
 
 Untracked all generated artifacts (per-user CSV/JSON/XLSX, matplotlib
 PNGs, Python `__pycache__`), strict secrets policy via `.gitignore`
@@ -166,9 +195,9 @@ anyone can stand the project up locally.
 | HTTP | requests, requests-cache (SQLite backend), urllib3 retry |
 | Visualization | matplotlib, seaborn |
 | Cloud | Google Cloud BigQuery (raw + transformed), Looker Studio (embedded) |
-| Analytics (planned) | dbt (BigQuery adapter) — staging, intermediate, marts |
+| Analytics | dbt 1.11 (BigQuery adapter) — `stg_raw_games` view, `int_player_games` table, incremental `fct_games` + `fct_user_statistics`, `dim_users` |
 | Hosting | Heroku |
-| Frontend | Vanilla HTML/CSS/JS (single-page) |
+| Frontend | React 18, Vite, TypeScript (SPA served by Flask) |
 
 ---
 
@@ -185,10 +214,11 @@ anyone can stand the project up locally.
 - **HTTP caching is the highest-ROI optimization for this kind of app.**
   A 9 MB SQLite file converts a "slow site" into an "instant site" for
   any returning user. `requests-cache` made it ~10 lines of code.
-- **Two transformation systems is fine, briefly.** The Python pipeline
-  and the (planned) dbt pipeline currently both produce stats. That's
-  the right state during a migration — kill the Python side once dbt is
-  serving the dashboard, not before.
+- **Two transformation systems is fine during a migration.** The Python
+  pipeline and the dbt pipeline currently both produce stats. That's
+  intentional — the Python side keeps the live page load fast while dbt
+  provides the replayable, testable version of the same logic. Kill the
+  Python side once dbt is serving the dashboard, not before.
 
 ---
 
@@ -196,22 +226,24 @@ anyone can stand the project up locally.
 
 Honest roadmap (these are real, not aspirational):
 
-1. **Write the dbt project** (`stg_raw_games` → `int_user_games` →
-   `fct_games`, `dim_users`, `fct_user_statistics`). Models are
-   sketched in [`DBT_PROJECT_STRUCTURE.md`](./DBT_PROJECT_STRUCTURE.md).
-2. **Vectorize `clean_dataframe`.** Replace the `iterrows()` loop
-   doing player-perspective calcs with `np.where`. ~50–100× speedup
-   on processing for power users with 10k+ games.
-3. **Incremental fetch.** Query `MAX(end_time)` from `raw_games` per
-   user, only fetch months strictly after that. Currently the cache
-   prevents re-downloads but a fresh server has no cache; a BigQuery
-   high-water-mark query would solve that across deployments.
-4. **Replace `subprocess.run` from `app.py`.** Import the pipeline
+1. **Point Looker Studio at the dbt mart tables.** `fct_games`,
+   `fct_user_statistics`, and `dim_users` are live in BigQuery now;
+   the dashboard still reads the interim SQL view (`chess_games_dynamic_view`).
+   Switching it over removes the last piece of Python-generated analytics.
+2. **Replace `subprocess.run` from `app.py`.** Import the pipeline
    directly to skip Python interpreter cold-start (~500 ms saved per
    request).
-5. **Add a real test suite.** `tests/` is currently a CLI runner
-   misnamed as `tests/`. Pytest coverage on `src/data` and `src/stats`
-   is high-leverage before the dbt cutover.
+3. **Add a real test suite.** `tests/` is currently a CLI runner
+   misnamed as `tests/`. Pytest coverage on `src/data` and `src/stats`,
+   plus Vitest + React Testing Library for `frontend/src/`, is high
+   leverage now that the dbt layer exists as a reference implementation.
+4. **Clean up `raw_games`** — ~19k rows have null `white_username` /
+   `black_username` from early development; ~3.8k duplicate UUIDs from
+   re-uploads. Delete them and tighten the upload dedup logic so they
+   don't accumulate again.
+5. **Configurable BigQuery target.** Project / dataset / table are
+   hard-coded in `api/bigquery_dashboard.py`. Moving them to env vars
+   would let anyone fork the repo and point it at their own GCP project.
 
 ---
 

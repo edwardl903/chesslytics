@@ -1,0 +1,102 @@
+version: 2
+
+sources:
+  - name: chess_com
+    description: >
+      Raw data from Chess.com API, written by the Flask app's
+      upload_raw_games() path in api/bigquery_dashboard.py.
+      Every game is stored as-is (nested objects flattened to top-level
+      columns). No player-perspective logic, no PGN parsing.
+    database: crucial-decoder-462021-m4
+    schema: test1
+
+    tables:
+      - name: raw_games
+        description: >
+          Append-only landing table from Chess.com API (flattened columns).
+          Not fully clean: some rows lack player fields (null white/black_username),
+          and the same uuid may appear more than once from repeated uploads.
+          Enforced constraints live on stg_raw_games (not_null usernames, unique game_id).
+
+        columns:
+          # ── Identifiers ──────────────────────────────────────────────
+          - name: uuid
+            description: Game identifier from Chess.com API (not globally unique in this table)
+            tests:
+              - not_null
+
+          - name: url
+            description: Full game URL on Chess.com
+
+          - name: tcn
+            description: Tactical Chess Notation encoded move string
+
+          # ── Game metadata ────────────────────────────────────────────
+          - name: pgn
+            description: Full PGN string exactly as returned by the API
+
+          - name: time_control
+            description: Raw time control string from API (e.g. "600" = 10 min, "300+5" = 5 min + 5s)
+
+          - name: end_time
+            description: Unix timestamp (seconds) when the game ended
+
+          - name: rated
+            description: Whether the game was rated (boolean)
+
+          - name: time_class
+            description: "Time control class: blitz | rapid | bullet | daily"
+
+          - name: rules
+            description: Game rules (almost always 'chess')
+
+          - name: fen
+            description: Final position FEN string
+
+          - name: initial_setup
+            description: Initial board setup FEN (non-standard for Chess960)
+
+          # ── White player ─────────────────────────────────────────────
+          - name: white_username
+            description: >
+              White player username. NULL on ~19k legacy/partial rows;
+              stg_raw_games filters these out.
+
+          - name: white_rating
+            description: White player rating at game start
+
+          - name: white_result
+            description: "White result string: win | resigned | timeout | checkmated | draw | stalemate | repetition | insufficient | timevsinsufficient | agreed | 50move | abandoned | kingofthehill | threecheck | etc."
+
+          - name: white_uuid
+            description: White player UUID
+
+          # ── Black player ─────────────────────────────────────────────
+          - name: black_username
+            description: >
+              Black player username. NULL on partial rows; filtered in staging.
+
+          - name: black_rating
+            description: Black player rating at game start
+
+          - name: black_result
+            description: Black result string (same vocabulary as white_result)
+
+          - name: black_uuid
+            description: Black player UUID
+
+          # ── Accuracies (optional) ─────────────────────────────────────
+          - name: white_accuracy
+            description: White player accuracy percentage (absent for many games)
+
+          - name: black_accuracy
+            description: Black player accuracy percentage (absent for many games)
+
+          # ── Load metadata ─────────────────────────────────────────────
+          - name: uploaded_at
+            description: Timestamp when this row was inserted into BigQuery
+            tests:
+              - not_null
+
+          - name: loaded_by_user
+            description: Chess.com username that triggered the /generate request
