@@ -2,6 +2,86 @@ version: 2
 
 models:
 
+  # ── fct_my_games ────────────────────────────────────────────────────────────
+  - name: fct_my_games
+    description: >
+      **Portfolio model** — EdwardL903's games only, pre-filtered from fct_games.
+      Incremental merge on player_game_key. Serves the portfolio API so it never
+      scans the full multi-user fct_games table. Same columns as fct_games.
+
+    config:
+      tags: ["reporting", "daily", "portfolio", "incremental"]
+      materialized: incremental
+      meta:
+        layer: reporting
+        grain: one row per game (EdwardL903 perspective)
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+
+    columns:
+      - name: player_game_key
+        description: Surrogate PK from fct_games
+        tests:
+          - not_null
+          - unique
+
+  # ── my_daily_stats ──────────────────────────────────────────────────────────
+  - name: my_daily_stats
+    description: >
+      **Portfolio model** — pre-aggregated daily stats for EdwardL903.
+      One row per (game_date × time_class). Contains daily counts, rating,
+      cumulative totals, win/loss streaks, and top opening stats.
+      Rebuilt on every dbt run. Designed for direct portfolio API reads.
+
+    config:
+      tags: ["reporting", "daily", "portfolio"]
+      materialized: table
+      meta:
+        layer: reporting
+        grain: one row per (game_date × time_class)
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+
+    columns:
+      - name: game_date
+        description: Calendar date
+        tests:
+          - not_null
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"
+        tests:
+          - not_null
+
+      - name: games_played
+        description: Games played on this date in this time class
+
+      - name: wins
+        description: Wins on this date
+
+      - name: win_rate
+        description: wins / games_played for this date
+
+      - name: closing_rating
+        description: Rating on the last game of the day
+
+      - name: peak_rating_ever
+        description: Running peak rating up to and including this date
+
+      - name: longest_win_streak
+        description: Longest consecutive win streak (all time) in this time class
+
+      - name: current_streak_outcome
+        description: "'win', 'draw', or 'lose' — what the current streak is"
+
+      - name: current_streak_length
+        description: How many games the current streak has lasted
+
+      - name: updated_at
+        description: When this row was last written by dbt
+
   # ── dim_users ──────────────────────────────────────────────────────────────
   - name: dim_users
     description: >

@@ -262,6 +262,131 @@ def get_dashboard_stats():
         print(f"Error getting dashboard stats: {e}")
         return jsonify({"error": "Failed to get dashboard statistics"}), 500
 
+@app.route('/api/portfolio/stats', methods=['GET'])
+def portfolio_stats():
+    """
+    Public read-only endpoint that returns EdwardL903's pre-aggregated chess
+    stats from the dbt `my_daily_stats` table in BigQuery.
+
+    Query params:
+      time_class  filter to 'blitz' | 'rapid' | 'bullet' | 'daily' (optional)
+      limit       number of days to return, default 90, max 365
+
+    Returns JSON with:
+      summary     – lifetime totals, current rating, streaks
+      daily       – array of daily stat rows (newest first)
+    """
+    if not BIGQUERY_ENABLED:
+        return jsonify({"error": "Portfolio stats not available"}), 503
+
+    try:
+        time_class = request.args.get('time_class', '').strip().lower() or None
+        try:
+            limit = min(int(request.args.get('limit', 90)), 365)
+        except ValueError:
+            limit = 90
+
+        client = bigquery_dashboard.client
+        project = "crucial-decoder-462021-m4"
+        dataset = "chesslytics_dbt"
+
+        tc_filter = "AND time_class = @time_class" if time_class else ""
+        params = []
+        if time_class:
+            from google.cloud import bigquery as _bq
+            params.append(_bq.ScalarQueryParameter("time_class", "STRING", time_class))
+
+        from google.cloud import bigquery as _bq
+
+        # ── Daily rows ────────────────────────────────────────────────────────
+        daily_query = f"""
+            SELECT
+                CAST(game_date AS STRING)   AS game_date,
+                game_year,
+                game_month,
+                time_class,
+                games_played,
+                wins,
+                losses,
+                draws,
+                ROUND(win_rate, 4)          AS win_rate,
+                closing_rating,
+                day_peak_rating,
+                avg_accuracy,
+                peak_rating_ever,
+                total_games,
+                total_wins,
+                longest_win_streak,
+                longest_loss_streak,
+                current_streak_outcome,
+                current_streak_length,
+                CAST(last_game_at AS STRING) AS last_game_at,
+                CAST(updated_at AS STRING)   AS updated_at
+            FROM `{project}.{dataset}.my_daily_stats`
+            WHERE 1=1 {tc_filter}
+            ORDER BY game_date DESC
+            LIMIT @limit
+        """
+        params_with_limit = params + [_bq.ScalarQueryParameter("limit", "INT64", limit)]
+        job_config = _bq.QueryJobConfig(query_parameters=params_with_limit)
+        daily_rows = [dict(row) for row in client.query(daily_query, job_config=job_config).result()]
+
+        # ── Summary (latest state per time class) ─────────────────────────────
+        summary_query = f"""
+            SELECT
+                time_class,
+                closing_rating                  AS current_rating,
+                peak_rating_ever,
+                total_games,
+                ROUND(total_wins / NULLIF(total_games, 0), 4) AS lifetime_win_rate,
+                longest_win_streak,
+                current_streak_outcome,
+                current_streak_length,
+                CAST(last_game_at AS STRING)    AS last_game_at
+            FROM `{project}.{dataset}.my_daily_stats`
+            WHERE 1=1 {tc_filter}
+            QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY time_class ORDER BY game_date DESC
+            ) = 1
+        """
+        summary_job_config = _bq.QueryJobConfig(query_parameters=params)
+        summary_rows = [dict(row) for row in client.query(summary_query, job_config=summary_job_config).result()]
+
+        # ── Recent games ──────────────────────────────────────────────────────
+        recent_query = f"""
+            SELECT
+                CAST(game_date AS STRING)       AS game_date,
+                CAST(game_end_timestamp AS STRING) AS game_end_timestamp,
+                time_class,
+                outcome,
+                my_result,
+                my_rating,
+                opp_username,
+                opp_rating,
+                rating_diff,
+                my_opening,
+                my_accuracy,
+                game_url
+            FROM `{project}.{dataset}.fct_my_games`
+            WHERE 1=1 {tc_filter}
+            ORDER BY game_end_timestamp DESC
+            LIMIT 20
+        """
+        recent_job_config = _bq.QueryJobConfig(query_parameters=params)
+        recent_rows = [dict(row) for row in client.query(recent_query, job_config=recent_job_config).result()]
+
+        return jsonify({
+            "username": "EdwardL903",
+            "summary": summary_rows,
+            "daily": daily_rows,
+            "recent_games": recent_rows,
+        })
+
+    except Exception as e:
+        logger.error(f"portfolio_stats error: {e}")
+        return jsonify({"error": "Failed to fetch portfolio stats"}), 500
+
+
 # SPA fallback. Any unmatched GET that isn't an API/static path returns the
 # React entry HTML so client-side routing (react-router) works on direct
 # navigation and refreshes (e.g. /about, /opening-analyzer).

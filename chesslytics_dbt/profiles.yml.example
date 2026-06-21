@@ -11,9 +11,10 @@ chesslytics_dbt:
       type: bigquery
       method: service-account
       project: crucial-decoder-462021-m4
-      dataset: test1
+      # dbt outputs land here — isolated from the Flask app's raw dataset (test1)
+      # sources.yml still reads FROM test1.raw_games; this is only where models are written
+      dataset: chesslytics_dbt
       keyfile: /absolute/path/to/chesslyzer-experimental/gcp/service_account.json
-      # Must match the region of your raw_games dataset (check: bq show --format=pretty crucial-decoder-462021-m4:test1)
       location: us-central1
       priority: interactive
       threads: 4

@@ -96,7 +96,7 @@ jobs:
                 type: bigquery
                 method: service-account
                 project: crucial-decoder-462021-m4
-                dataset: test1
+                dataset: chesslytics_dbt
                 keyfile: /tmp/sa.json
                 location: us-central1
                 priority: interactive

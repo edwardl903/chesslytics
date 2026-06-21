@@ -50,12 +50,14 @@ snapshots:
 models:
   chesslytics_dbt:
 
+    # All models land in the profile dataset `chesslytics_dbt` (us-central1).
+    # Source data (raw_games) stays in `test1` — the Flask app's territory.
+    # dbt only reads from test1 via sources.yml; it never writes there.
     staging:
       +materialized: view
       +tags: ["staging", "daily"]
       +docs:
         show: true
-      # Staging is "protected" — only intermediate should ref it
       +access: protected
 
     intermediate:
@@ -70,5 +72,4 @@ models:
       +tags: ["reporting", "daily"]
       +docs:
         show: true
-      # Reporting models are "public" — safe for BI tools and external refs
       +access: public
