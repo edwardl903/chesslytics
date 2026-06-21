@@ -1,0 +1,62 @@
+version: 2
+
+exposures:
+
+  - name: looker_studio_chess_dashboard
+    label: "Chesslytics — Looker Studio Dashboard"
+    type: dashboard
+    maturity: medium
+    url: https://lookerstudio.google.com/
+
+    description: >
+      Embedded Looker Studio dashboard surfaced in the Chesslytics React app.
+      Pre-filtered by username_year. Reads from fct_games via the
+      chess_games_dynamic_view (interim) — target is to migrate directly
+      to fct_games and fct_user_statistics once the view is retired.
+
+    depends_on:
+      - ref('fct_games')
+      - ref('fct_user_statistics')
+      - ref('dim_users')
+
+    owner:
+      name: Edward Lai
+      email: edwardl903@gmail.com
+
+  - name: chesslytics_web_app
+    label: "Chesslytics Web App (Heroku)"
+    type: application
+    maturity: high
+    url: https://chesslyzer-app.herokuapp.com/
+
+    description: >
+      Flask + React SPA deployed on Heroku. Reads from BigQuery for
+      embedding Looker Studio. The daily ingest pipeline (GitHub Actions)
+      feeds raw_games, which flows through dbt models to power this app.
+
+    depends_on:
+      - ref('fct_games')
+      - ref('dim_users')
+
+    owner:
+      name: Edward Lai
+      email: edwardl903@gmail.com
+
+  - name: github_actions_pipeline
+    label: "Daily GitHub Actions Pipeline"
+    type: application
+    maturity: high
+    url: https://github.com/edwardl903/chesslytics/actions
+
+    description: >
+      Automated daily pipeline (cron 06:00 UTC). Ingests Chess.com games
+      for all tracked_usernames into raw_games, then runs dbt
+      (seed → snapshot → run → test). Logs each run to pipeline_runs
+      audit table in BigQuery.
+
+    depends_on:
+      - source('chess_com', 'raw_games')
+
+    owner:
+      name: Edward Lai
+      email: edwardl903@gmail.com

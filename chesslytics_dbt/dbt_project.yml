@@ -4,11 +4,11 @@ config-version: 2
 
 profile: 'chesslytics_dbt'
 
-model-paths:   ["models"]
+model-paths:    ["models"]
 analysis-paths: ["analyses"]
-test-paths:    ["tests"]
-seed-paths:    ["seeds"]
-macro-paths:   ["macros"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
 snapshot-paths: ["snapshots"]
 
 clean-targets:
@@ -16,24 +16,59 @@ clean-targets:
   - "dbt_packages"
 
 # ---------------------------------------------------------------------------
-# Default variables — override on the CLI or in dbt Cloud env
+# Variables — override on CLI:  dbt run --vars '{"default_username": "hikaru"}'
 # ---------------------------------------------------------------------------
 vars:
-  # Default user for ad-hoc runs. The mart models work for ALL users; this
-  # variable is only used by one-off analysis queries in analyses/.
   default_username: "EdwardL903"
 
 # ---------------------------------------------------------------------------
-# Model materializations by folder
+# Seed config
+# ---------------------------------------------------------------------------
+seeds:
+  chesslytics_dbt:
+    tracked_usernames:
+      +column_types:
+        username:  STRING
+        added_at:  DATE
+        notes:     STRING
+
+# ---------------------------------------------------------------------------
+# Snapshot config
+# ---------------------------------------------------------------------------
+snapshots:
+  chesslytics_dbt:
+    +target_schema: test1
+
+# ---------------------------------------------------------------------------
+# Model config — layered by folder
+# Naming convention:
+#   sources     → declared in sources.yml (raw BigQuery tables)
+#   staging     → stg_*   views, 1:1 with source, clean + rename only
+#   intermediate → int_*  tables, business logic, player perspective
+#   reporting   → fct_*/dim_*  tables, final shape for BI consumers
 # ---------------------------------------------------------------------------
 models:
   chesslytics_dbt:
-    # All models land in profile dataset `test1` (same dataset/region as raw_games).
-    # Avoids separate test1_staging / test1_marts datasets and region mismatches.
+
     staging:
       +materialized: view
+      +tags: ["staging", "daily"]
+      +docs:
+        show: true
+      # Staging is "protected" — only intermediate should ref it
+      +access: protected
+
     intermediate:
       +materialized: table
-    marts:
+      +tags: ["intermediate", "daily"]
+      +docs:
+        show: true
+      +access: protected
+
+    reporting:
       +materialized: table
-      # fct_* models override to incremental in their .sql files
+      +tags: ["reporting", "daily"]
+      +docs:
+        show: true
+      # Reporting models are "public" — safe for BI tools and external refs
+      +access: public

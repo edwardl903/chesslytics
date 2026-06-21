@@ -1,0 +1,287 @@
+version: 2
+
+models:
+
+  # ── dim_users ──────────────────────────────────────────────────────────────
+  - name: dim_users
+    description: >
+      **Reporting model — Dimension** — one row per unique Chess.com username.
+      Pre-aggregates lifetime stats (current/peak rating, win rate, total games,
+      per-time-class counts) so BI tools can do simple lookups without scanning
+      fct_games. Rebuilt on each dbt run from int_player_games.
+
+    config:
+      tags: ["reporting", "daily", "dimension"]
+      materialized: table
+      meta:
+        layer: reporting
+        grain: one row per username
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+        downstream_consumers:
+          - looker_studio_chess_dashboard
+          - chesslytics_web_app
+
+    columns:
+      - name: user_key
+        description: Surrogate primary key — MD5(username)
+        tests:
+          - not_null
+          - unique
+
+      - name: username
+        description: Chess.com username (natural key, case-sensitive as from API)
+        tests:
+          - not_null
+          - unique
+
+      - name: current_rating
+        description: Rating on the user's most recent game (MAX_BY rating on latest timestamp)
+
+      - name: peak_rating
+        description: Highest rating recorded across all games and time classes
+
+      - name: lowest_rating
+        description: Lowest rating recorded
+
+      - name: last_game_date
+        description: Date of the user's most recent game
+
+      - name: first_game_date
+        description: Date of the user's first game in raw_games
+
+      - name: active_days
+        description: Number of distinct calendar days the user played at least one game
+
+      - name: total_games
+        description: Total games played across all time classes
+
+      - name: total_wins
+        description: Total wins across all time classes
+
+      - name: total_losses
+        description: Total losses across all time classes
+
+      - name: total_draws
+        description: Total draws across all time classes
+
+      - name: win_rate
+        description: total_wins / total_games (NULL if zero games). Range 0–1.
+
+      - name: blitz_games
+        description: Games played in the blitz time class
+
+      - name: rapid_games
+        description: Games played in the rapid time class
+
+      - name: bullet_games
+        description: Games played in the bullet time class
+
+      - name: daily_games
+        description: Games played in the daily (correspondence) time class
+
+      - name: updated_at
+        description: Timestamp when this row was last written by dbt
+
+  # ── fct_games ──────────────────────────────────────────────────────────────
+  - name: fct_games
+    description: >
+      **Reporting model — Fact** — one row per (game_id × player).
+      The primary analytical table for game-level analysis.
+      Partitioned by game_date (monthly) and clustered by my_username + time_class
+      for fast Looker Studio queries. Incrementally updated — new games are merged
+      on player_game_key using uploaded_at as the watermark.
+
+    config:
+      tags: ["reporting", "daily", "fact", "incremental"]
+      materialized: incremental
+      meta:
+        layer: reporting
+        grain: one row per (game_id × player)
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+        update_strategy: incremental merge on player_game_key
+        downstream_consumers:
+          - looker_studio_chess_dashboard
+          - chesslytics_web_app
+
+    columns:
+      - name: player_game_key
+        description: Surrogate PK — MD5(game_id, my_username)
+        tests:
+          - not_null
+          - unique
+
+      - name: game_id
+        description: UUID from Chess.com (FK to stg_raw_games)
+        tests:
+          - not_null
+
+      - name: user_key
+        description: FK to dim_users.user_key
+
+      - name: my_username
+        description: Player username (this row's perspective)
+        tests:
+          - not_null
+
+      - name: game_date
+        description: Game end date (partition key)
+        tests:
+          - not_null
+
+      - name: game_year
+        description: Calendar year
+
+      - name: game_month
+        description: Calendar month 1–12
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"
+
+      - name: my_color
+        description: "'white' or 'black'"
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['white', 'black']
+
+      - name: my_rating
+        description: Player's rating at game start
+
+      - name: opp_rating
+        description: Opponent's rating at game start
+
+      - name: rating_diff
+        description: my_rating − opp_rating
+
+      - name: outcome
+        description: "win | draw | lose"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['win', 'draw', 'lose']
+
+      - name: my_result
+        description: Raw result string (win | resigned | timeout | …)
+
+      - name: my_accuracy
+        description: Player accuracy % (optional)
+
+      - name: my_opening
+        description: Opening from player's perspective (N/A if not applicable)
+
+      - name: eco
+        description: ECO slug truncated at first major opening keyword
+
+      - name: opp_username
+        description: Opponent username
+
+      - name: username_year
+        description: Looker Studio filter key (e.g. 'EdwardL903_2026')
+        tests:
+          - not_null
+
+      - name: loaded_at
+        description: Timestamp when the source row was uploaded to BigQuery
+
+      - name: fact_updated_at
+        description: Timestamp when this fact row was last written by dbt
+
+  # ── fct_user_statistics ────────────────────────────────────────────────────
+  - name: fct_user_statistics
+    description: >
+      **Reporting model — Fact** — daily per-user per-time-class statistics.
+      Grain: (username × stat_date × time_class). Includes both daily counts
+      (games_played, wins, losses, draws) and cumulative running totals
+      (total_games, total_wins, highest_rating_ever) computed via window functions.
+      Incrementally updated — only new stat_dates are processed per run.
+      Optimised for rating-over-time charts and monthly aggregation in BI.
+
+    config:
+      tags: ["reporting", "daily", "fact", "incremental"]
+      materialized: incremental
+      meta:
+        layer: reporting
+        grain: one row per (username × stat_date × time_class)
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+        update_strategy: incremental merge on stat_key
+        downstream_consumers:
+          - looker_studio_chess_dashboard
+
+    columns:
+      - name: stat_key
+        description: Surrogate PK — MD5(username, stat_date, time_class)
+        tests:
+          - not_null
+          - unique
+
+      - name: user_key
+        description: FK to dim_users.user_key
+
+      - name: username
+        description: Chess.com username
+        tests:
+          - not_null
+
+      - name: stat_date
+        description: The calendar date these statistics are for
+        tests:
+          - not_null
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['blitz', 'rapid', 'bullet', 'daily', 'correspondence']
+
+      - name: games_played
+        description: Games played on this date in this time class
+        tests:
+          - not_null
+
+      - name: wins
+        description: Wins on this date
+
+      - name: losses
+        description: Losses on this date
+
+      - name: draws
+        description: Draws on this date
+
+      - name: avg_accuracy
+        description: Average accuracy % on this date (NULL if no accuracy data)
+
+      - name: avg_rating
+        description: Average rating across games on this date
+
+      - name: max_rating
+        description: Highest rating reached on this date
+
+      - name: min_rating
+        description: Lowest rating on this date
+
+      - name: closing_rating
+        description: Rating on the last game of the day (MAX_BY on game_end_timestamp)
+
+      - name: total_games
+        description: Cumulative games played up to and including stat_date (running sum)
+
+      - name: total_wins
+        description: Cumulative wins up to and including stat_date (running sum)
+
+      - name: current_rating
+        description: Alias for closing_rating — rating at end of this day
+
+      - name: highest_rating_ever
+        description: Running peak rating up to and including stat_date
+
+      - name: fact_updated_at
+        description: Timestamp when this row was last written by dbt

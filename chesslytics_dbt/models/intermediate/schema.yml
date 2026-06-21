@@ -3,14 +3,30 @@ version: 2
 models:
   - name: int_player_games
     description: >
-      Player-perspective game data. Each source game produces two rows
-      (one for white, one for black), so every player's history is
-      available without needing per-user dbt runs.
-      Grain: one row per (game_id, player).
+      **Intermediate model** — player-perspective game data.
+      Each source game produces two rows (one for white, one for black),
+      so every player's full history is available without per-user dbt runs.
+      Adds outcome classification (win/draw/lose), rating difference,
+      ECO/opening extraction from PGN via REGEXP_EXTRACT, and the
+      username_year key used by Looker Studio filters.
+      Grain: one row per (game_id × player).
+
+    config:
+      tags: ["intermediate", "daily"]
+      materialized: table
+      meta:
+        layer: intermediate
+        owner: edward_lai
+        contains_pii: false
+        sla: daily
+        upstream_sources:
+          - stg_raw_games
 
     columns:
       - name: player_game_key
-        description: Surrogate key — MD5(game_id, my_username). Natural PK for this model.
+        description: >
+          Surrogate primary key — MD5(game_id, my_username).
+          Uniquely identifies one player's participation in one game.
         tests:
           - not_null
           - unique
@@ -20,13 +36,51 @@ models:
         tests:
           - not_null
 
+      - name: game_url
+        description: Full Chess.com game URL
+
+      - name: game_end_timestamp
+        description: Game end TIMESTAMP (UTC)
+
+      - name: game_date
+        description: Game end DATE
+        tests:
+          - not_null
+
+      - name: game_year
+        description: Calendar year
+
+      - name: game_month
+        description: Calendar month 1–12
+
+      - name: game_day
+        description: Calendar day 1–31
+
+      - name: game_hour
+        description: Hour of game end (UTC, 0–23)
+
+      - name: game_day_of_week
+        description: Day of week (1=Sun … 7=Sat)
+
+      - name: game_weekday_name
+        description: Full weekday name (e.g. 'Monday')
+
+      - name: time_class
+        description: "blitz | rapid | bullet | daily"
+
+      - name: raw_time_control
+        description: Raw time control string from API
+
+      - name: rated
+        description: Whether the game was rated
+
       - name: my_username
-        description: The player whose perspective this row represents
+        description: Chess.com username for the player this row represents
         tests:
           - not_null
 
       - name: my_color
-        description: "'white' or 'black'"
+        description: "'white' or 'black' — which side the player was on"
         tests:
           - not_null
           - accepted_values:
@@ -36,31 +90,53 @@ models:
       - name: my_rating
         description: Player's rating at game start
 
+      - name: my_result
+        description: Raw result string for this player (win | resigned | timeout | …)
+
+      - name: my_accuracy
+        description: Player's accuracy % (optional)
+
+      - name: my_opening
+        description: >
+          Opening from this player's perspective.
+          White: non-Defense ECO slug. Black: Defense ECO slug. Otherwise 'N/A'.
+          Extracted via REGEXP_EXTRACT on PGN ECOUrl tag.
+
+      - name: eco
+        description: ECO slug truncated at first major opening keyword (Defense | Gambit | Opening | …)
+
+      - name: opp_username
+        description: Opponent's Chess.com username
+
+      - name: opp_rating
+        description: Opponent's rating at game start
+
+      - name: opp_result
+        description: Opponent's raw result string
+
+      - name: opp_accuracy
+        description: Opponent's accuracy % (optional)
+
       - name: outcome
-        description: "Categorized result: win | draw | lose"
+        description: "Categorized result from player perspective: win | draw | lose"
         tests:
           - not_null
           - accepted_values:
               arguments:
                 values: ['win', 'draw', 'lose']
 
-      - name: my_opening
-        description: >
-          Opening from player perspective (white = non-Defense opening,
-          black = Defense opening, otherwise 'N/A')
-
-      - name: eco
-        description: Opening ECO slug truncated at first major keyword
+      - name: rating_diff
+        description: my_rating − opp_rating (positive = player is higher-rated)
 
       - name: username_year
-        description: "Looker filter key — e.g. 'EdwardL903_2026'"
+        description: >
+          Looker Studio filter key — CONCAT(my_username, '_', game_year).
+          Example: 'EdwardL903_2026'. Used to pre-filter embedded dashboards.
         tests:
           - not_null
 
-      - name: game_date
-        description: Date the game ended (DATE)
-        tests:
-          - not_null
+      - name: uploaded_at
+        description: Timestamp when the source row was inserted into BigQuery
 
-      - name: time_class
-        description: "blitz | rapid | bullet | daily"
+      - name: loaded_by_user
+        description: Username that triggered the original ingest

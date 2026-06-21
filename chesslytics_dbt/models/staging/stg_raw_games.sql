@@ -21,6 +21,28 @@ WITH source AS (
 
 ),
 
+/*
+  Deduplicate at the source: raw_games is an append-only table and can
+  accumulate multiple rows for the same UUID from repeated uploads.
+  Keep the most recently uploaded version of each game.
+  QUALIFY is BigQuery-native and more readable than a subquery.
+*/
+deduped AS (
+
+    SELECT *
+    FROM source
+    WHERE
+        uuid           IS NOT NULL
+        AND end_time   IS NOT NULL
+        AND white_username IS NOT NULL
+        AND black_username IS NOT NULL
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY uuid
+        ORDER BY uploaded_at DESC
+    ) = 1
+
+),
+
 cleaned AS (
 
     SELECT
@@ -69,14 +91,7 @@ cleaned AS (
         uploaded_at,
         loaded_by_user
 
-    FROM source
-
-    WHERE
-        -- Require natural primary key
-        uuid          IS NOT NULL
-        AND end_time  IS NOT NULL
-        AND white_username IS NOT NULL
-        AND black_username IS NOT NULL
+    FROM deduped
 
 )
 
