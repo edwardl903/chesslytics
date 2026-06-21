@@ -61,24 +61,38 @@ TRACKED_USERNAMES: list[str] = [
 
 def _get_bigquery_client():
     """Return a BigQuery client using env-var creds (CI) or local keyfile."""
-    from google.cloud import bigquery
     import json
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
 
-    json_str = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON") or \
-               os.environ.get("GOOGLE_CREDENTIALS")
-    if json_str:
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write(json_str)
-            tmp_path = f.name
-        client = bigquery.Client.from_service_account_json(
-            tmp_path, project="crucial-decoder-462021-m4"
+    json_str = (
+        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON") or
+        os.environ.get("GOOGLE_CREDENTIALS")
+    )
+
+    if json_str and json_str.strip():
+        try:
+            info = json.loads(json_str.strip())
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"GOOGLE_APPLICATION_CREDENTIALS_JSON is set but contains invalid JSON: {e}\n"
+                f"First 100 chars: {repr(json_str[:100])}"
+            )
+            raise
+
+        credentials = service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
-        os.unlink(tmp_path)
-        return client
+        logger.info(f"BigQuery client auth via env var (project={info.get('project_id')})")
+        return bigquery.Client(
+            project="crucial-decoder-462021-m4",
+            credentials=credentials,
+        )
 
     # Local development fallback
     keyfile = os.path.join(REPO_ROOT, "gcp", "service_account.json")
+    logger.info(f"BigQuery client auth via local keyfile: {keyfile}")
     return bigquery.Client.from_service_account_json(
         keyfile, project="crucial-decoder-462021-m4"
     )

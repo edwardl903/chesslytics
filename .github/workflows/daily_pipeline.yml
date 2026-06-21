@@ -72,14 +72,21 @@ jobs:
           pip install -r requirements.txt
           pip install dbt-bigquery
 
-      - name: Write dbt profiles.yml
+      - name: Write dbt profiles.yml + service account key
         env:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
         run: |
           mkdir -p ~/.dbt
 
-          # Write service account JSON to a temp file for dbt keyfile auth
-          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/sa.json
+          # Use Python to write the JSON — avoids echo mangling special chars
+          python3 - <<'PYEOF'
+          import os, json, pathlib
+
+          raw = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"].strip()
+          info = json.loads(raw)                           # validates JSON early
+          pathlib.Path("/tmp/sa.json").write_text(json.dumps(info))
+          print(f"Wrote service account for project: {info.get('project_id')}")
+          PYEOF
 
           cat > ~/.dbt/profiles.yml << 'EOF'
           chesslytics_dbt:
