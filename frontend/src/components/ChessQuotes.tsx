@@ -57,26 +57,16 @@ export default function ChessQuotes({ active }: Props) {
   return (
     <div
       id="chessQuote"
+      className="chess-quotes"
       style={{
-        marginTop: 5,
-        textAlign: 'center',
-        maxWidth: 600,
-        marginLeft: 'auto',
-        marginRight: 'auto',
         opacity: containerVisible ? 1 : 0,
         transform: containerVisible ? 'translateY(0)' : 'translateY(20px)',
         transition: 'opacity 0.5s ease, transform 0.5s ease',
       }}
     >
       <div
+        className="chess-quotes-text"
         style={{
-          fontFamily: "'League Spartan', sans-serif",
-          fontSize: 18,
-          fontWeight: 600,
-          color: '#EEEED5',
-          lineHeight: 1.6,
-          fontStyle: 'italic',
-          textShadow: '0 2px 4px rgba(0, 0, 0, 0.3)',
           opacity: contentVisible ? 1 : 0,
           transform: contentVisible ? 'translateY(0)' : 'translateY(-10px)',
           transition: 'opacity 0.3s ease, transform 0.3s ease',
@@ -85,13 +75,8 @@ export default function ChessQuotes({ active }: Props) {
         {quote.text}
       </div>
       <div
+        className="chess-quotes-author"
         style={{
-          fontFamily: "'League Spartan', sans-serif",
-          fontSize: 16,
-          fontWeight: 400,
-          color: 'rgba(238, 238, 213, 0.8)',
-          marginTop: 12,
-          textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
           opacity: contentVisible ? 1 : 0,
           transform: contentVisible ? 'translateY(0)' : 'translateY(-10px)',
           transition: 'opacity 0.3s ease, transform 0.3s ease',

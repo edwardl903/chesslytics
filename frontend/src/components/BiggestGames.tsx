@@ -30,17 +30,7 @@ const SECTION_HEADER_STYLE: React.CSSProperties = {
   boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
 };
 
-const LINK_STYLE: React.CSSProperties = {
-  background: '#EEEED5',
-  color: '#2D6056',
-  padding: '8px 16px',
-  borderRadius: 20,
-  textDecoration: 'none',
-  fontSize: 12,
-  fontWeight: 600,
-  transition: 'all 0.3s ease',
-  display: 'inline-block',
-};
+const LINK_CLASS = 'highlight-game-link';
 
 function HighlightCard({
   emoji,
@@ -99,7 +89,7 @@ function HighlightCard({
       >
         {date}
       </div>
-      <a href={link} target="_blank" rel="noopener noreferrer" className="stat-link" style={LINK_STYLE}>
+      <a href={link} target="_blank" rel="noopener noreferrer" className={`stat-link ${LINK_CLASS}`}>
         {ctaEmoji} View Game
       </a>
     </div>

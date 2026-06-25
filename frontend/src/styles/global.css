@@ -6,6 +6,8 @@
     /* Fixed bar + wrapped links on mid widths; keep hero art fully below the bar */
     --site-nav-offset: calc(152px + env(safe-area-inset-top, 0px));
     --section-gap-major: 72px;
+    --content-gutter: 16px;
+    --touch-min: 44px;
 }
 
 html {
@@ -382,19 +384,19 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 .stats-container {
     width: 100%;
     max-width: 1600px;
-    min-height: 100vh;
+    min-height: 0;
     margin: 0 auto;
-    margin-top: clamp(16px, 3vw, 40px);
+    margin-top: clamp(8px, 2vw, 24px);
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: stretch;
     gap: var(--section-gap-major);
-    padding: clamp(72px, 9vw, 120px) 20px 72px;
+    padding: clamp(16px, 4vw, 40px) var(--content-gutter) clamp(32px, 6vw, 72px);
     box-sizing: border-box;
     position: relative;
     z-index: 0;
-    overflow-x: visible;
+    overflow-x: clip;
 }
 
 .background-overlay, .background-overlay-second {
@@ -424,9 +426,11 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 .row-0, .row-1, .row-2, .row-3 {
     display: grid;
     width: 100%;
-    justify-content: center;
-    gap: 32px;
-    margin-bottom: 36px;
+    max-width: 100%;
+    justify-content: stretch;
+    gap: clamp(12px, 3vw, 24px);
+    margin-bottom: clamp(16px, 3vw, 28px);
+    box-sizing: border-box;
 }
 
 .row-0 {
@@ -441,7 +445,13 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 /* Four stats on one row; minmax(0,1fr) lets columns shrink so the 4th box does not wrap */
 .row-3 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 28px;
+    gap: clamp(12px, 2.5vw, 28px);
+}
+
+@media (max-width: 900px) {
+    .row-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 /* ------------------------
@@ -457,6 +467,8 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     align-items: flex-start;
     gap: 12px;
     box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
 }
 
 .stat-box.no-bg {
@@ -476,7 +488,9 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 .stat-title, .stat-value, .stat-details, .stat-opponent, .stat-opening {
     color: #0A4345;
     font-family: 'League Spartan', sans-serif;
-    line-height: 100%;
+    line-height: 1.2;
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 .stat-title {
@@ -502,6 +516,25 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 /* ------------------------
    Profile Section
 ------------------------- */
+.profile-header {
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.profile-header-body {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
 .profile-stats-container {
     display: flex;
     align-items: center;
@@ -514,51 +547,72 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     object-fit: cover;
 }
 
-/* Row 0 Custom Layout */
+/* Legacy row class — kept for any older markup references */
 .row-profile {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    width: 1133.87px;
-    height: 115.46px;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
 }
 
-/* Header title */
 .stats-header-title {
     color: #EEEED5;
-    font-size: 40px;
+    font-size: clamp(1.25rem, 4.5vw, 2.5rem);
     font-family: 'League Spartan', sans-serif;
-    font-weight: 500;
-    line-height: 100%;
+    font-weight: 600;
+    line-height: 1.15;
     text-align: center;
-}
-
-/* Profile container (image + ratings) */
-.profile-stats-container-custom {
-    display: flex;
-    align-items: center;
+    margin: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    hyphens: auto;
 }
 
 .profile-avatar {
     border-radius: 50%;
-    width: 100px;
-    height: 100px;
-    margin-right: 50px;
-    margin-bottom: 50px;
+    width: clamp(72px, 18vw, 100px);
+    height: clamp(72px, 18vw, 100px);
+    object-fit: cover;
+    flex-shrink: 0;
 }
 
-.profile-ratings-row {
-    display: flex;
-    gap: 35px;
-    flex: 1;
-    margin-bottom: 50px;
+.profile-ratings-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(8px, 2vw, 16px);
+    width: 100%;
+    max-width: 520px;
 }
 
 .profile-rating-box {
-    flex: 1;
-    padding: 20px;
-    border-radius: 8px;
+    padding: clamp(10px, 2.5vw, 16px);
+    min-width: 0;
+}
+
+.profile-rating-box .stat-title {
+    font-size: clamp(0.7rem, 2.5vw, 0.85rem);
+    letter-spacing: 0.04em;
+}
+
+.profile-rating-box .stat-value {
+    font-size: clamp(1.25rem, 5vw, 1.75rem);
+}
+
+/* Legacy aliases */
+.profile-stats-container-custom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    gap: 20px;
+}
+
+.profile-ratings-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(8px, 2vw, 16px);
+    width: 100%;
+    max-width: 520px;
 }
 
 /* Images section */
@@ -584,7 +638,8 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     height: auto;
     border-radius: 8px;
     object-fit: contain;
-    margin: 20px;
+    margin: 0;
+    max-width: 100%;
 }
 
 /* ------------------------
@@ -601,9 +656,11 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 
 #imagesContainer img {
     max-width: 100%;
+    width: 100%;
     border-radius: 12px;
     object-fit: contain;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin: 0;
 }
 
 /* ------------------------
@@ -659,8 +716,7 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     margin: 40px 0 20px;
   }
   
-  /* Special stat box layout */
-  .stat-box2 {
+.stat-box2 {
     padding: 20px;
     background: #EEEED5;
     border-radius: 20px;
@@ -670,7 +726,9 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     align-items: flex-start;
     gap: 12px;
     box-sizing: border-box;
-  }
+    min-width: 0;
+    width: 100%;
+}
   
   /* Link inside stat box */
   .stat-link {
@@ -678,6 +736,26 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
     font-weight: bold;
     text-decoration: underline;
     margin-top: 8px;
+  }
+
+  .highlight-game-link {
+    background: #EEEED5;
+    color: #2D6056;
+    padding: 10px 16px;
+    border-radius: 20px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--touch-min);
+    transition: background 0.2s ease;
+  }
+
+  .highlight-game-link:hover {
+    background: #e0e0c8;
+    color: #2D6056;
   }
   
   .stat-link:hover {
@@ -695,81 +773,185 @@ button, a, .nav-link, .stat-link, .download-button, .share-button, #submitBtn, #
 /* ------------------------
    Responsive Design
 ------------------------- */
+@media (max-width: 900px) {
+    :root {
+        --site-nav-offset: calc(64px + env(safe-area-inset-top, 0px));
+        --section-gap-major: 40px;
+        --content-gutter: max(12px, env(safe-area-inset-left, 0px));
+    }
+
+    #contentContainer {
+        padding-left: max(12px, env(safe-area-inset-left, 0px));
+        padding-right: max(12px, env(safe-area-inset-right, 0px));
+    }
+
+    .page-content {
+        padding-top: 16px;
+        min-height: auto;
+    }
+
+    #home-page.page-content {
+        padding-top: 20px;
+    }
+
+    .app-main {
+        padding-bottom: max(32px, env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Landscape phones / small tablets: single column stats */
+    .row-1,
+    .row-2 {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-highlights-section .row-2 {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 768px) {
     .main-entry {
-        margin-top: 4px;
-        padding: 22px 12px 0;
+        margin-top: 0;
+        padding: 12px 0 0;
+        gap: 28px;
     }
 
     .content-container {
-        padding: 12px;
+        padding: 0;
     }
 
     .stats-container {
-        margin-top: clamp(12px, 3vw, 28px);
-        padding: clamp(56px, 8vw, 88px) 12px 56px;
-        gap: 52px;
-    }
-
-    .row-1, .row-2 {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    }
-
-    .row-3 {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 8px;
+        padding: 12px 0 40px;
+        gap: 32px;
     }
 
     .stat-title {
-        font-size: 16px;
+        font-size: 15px;
     }
 
     .stat-value {
-        font-size: 24px;
+        font-size: clamp(1.35rem, 6vw, 1.75rem);
     }
 
     .stat-details, .stat-opponent, .stat-opening {
         font-size: 14px;
     }
 
-    .stat-box {
-        padding: 12px;
+    .stat-box,
+    .stat-box2 {
+        padding: 14px;
     }
 
-    .profile-stats-container img {
-        width: 90px;
-        height: 90px;
+    .stat-section-header {
+        font-size: clamp(1.1rem, 4.5vw, 1.5rem) !important;
+        margin: 20px 0 12px !important;
+        padding: 12px !important;
+    }
+
+    .export-strip {
+        padding: 16px 12px;
+    }
+
+    .export-buttons-row {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .download-button,
     .share-button {
-        font-size: 14px;
-        padding: 10px 16px;
+        width: 100%;
+        max-width: none;
+        min-height: var(--touch-min);
+        font-size: 15px;
+        padding: 12px 16px;
+    }
+
+    .chess-form-input {
+        font-size: 16px; /* prevents iOS zoom on focus */
+        height: var(--touch-min);
+    }
+
+    .chess-form-year-select {
+        font-size: 16px;
+    }
+
+    .cta-button {
+        min-height: var(--touch-min);
+        font-size: 17px;
+    }
+
+    .chess-form-example-chip {
+        min-height: 36px;
+    }
+
+    .dashboard-iframe-shell {
+        height: min(70vh, 640px);
+        min-height: 280px;
     }
 }
 
 @media (max-width: 480px) {
-    .row-1, .row-2, .row-3 {
+    :root {
+        --section-gap-major: 32px;
+    }
+
+    .row-3 {
         grid-template-columns: 1fr;
     }
 
-    .content-container {
-        padding: 10px;
+    .chess-form-title-row {
+        flex-direction: column;
+        gap: 10px;
     }
 
-    .stats-container {
-        padding: 40px 10px 48px;
-        gap: 44px;
+    .chess-form-cta-shell {
+        padding: 14px;
     }
 
-    .stat-box {
-        width: 100%;
+    .stats-capture-inner {
+        padding: 20px 12px 24px;
+        border-radius: 16px;
     }
 
-    .download-button,
-    .share-button {
-        width: 100%;
-        max-width: 320px;
+    .profile-ratings-grid {
+        max-width: 100%;
     }
+}
+
+/* Touch devices: native cursor, no hover transforms, larger tap targets */
+@media (pointer: coarse) {
+    html, body,
+    button, a, .nav-link, .stat-link, .download-button, .share-button,
+    #submitBtn, #loadDashboardBtn, .cta-button {
+        cursor: pointer !important;
+    }
+
+    .nav-link:hover,
+    .site-nav-link:hover,
+    .cta-button:hover:not(:disabled),
+    .download-button:hover,
+    .share-button:hover {
+        transform: none;
+    }
+
+    .chess-form-input:focus,
+    .main-entry input[type="text"]:focus,
+    .main-entry select:focus {
+        transform: none;
+    }
+}
+
+button,
+.cta-button,
+.download-button,
+.share-button,
+.chess-form-example-chip,
+.dashboard-load-btn,
+.dashboard-tool-btn,
+.site-nav-burger {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 /* ------------------------
@@ -797,6 +979,17 @@ img {
 .page-content {
     min-height: calc(100vh - var(--site-nav-offset));
     padding-top: 36px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow-x: clip;
+}
+
+.page-content h1 {
+    font-size: clamp(1.75rem, 6vw, 3rem);
+    line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
 /* Home hero: extra clearance so the gift/pawn art clears the fixed bar (nav can wrap on mid widths) */
@@ -949,8 +1142,46 @@ img {
     opacity: 0.9;
 }
 
+.footer-contact {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 4px 8px;
+    overflow-wrap: anywhere;
+}
+
 .footer-sep {
     opacity: 0.7;
+}
+
+.chess-quotes {
+    margin-top: 8px;
+    text-align: center;
+    max-width: min(600px, 100%);
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 12px;
+    box-sizing: border-box;
+}
+
+.chess-quotes-text {
+    font-family: 'League Spartan', sans-serif;
+    font-size: clamp(0.95rem, 3.5vw, 1.125rem);
+    font-weight: 600;
+    color: #EEEED5;
+    line-height: 1.6;
+    font-style: italic;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.chess-quotes-author {
+    font-family: 'League Spartan', sans-serif;
+    font-size: clamp(0.85rem, 3vw, 1rem);
+    font-weight: 400;
+    color: rgba(238, 238, 213, 0.8);
+    margin-top: 12px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .main-entry {
@@ -1169,6 +1400,7 @@ img {
     backdrop-filter: blur(10px);
     z-index: 1000;
     border-bottom: 2px solid #EEEED5;
+    padding-top: env(safe-area-inset-top, 0px);
 }
 
 .site-nav-inner {
@@ -1283,11 +1515,13 @@ img {
     right: 0;
     width: min(320px, 88vw);
     height: 100vh;
+    height: 100dvh;
     background: rgba(36, 78, 70, 0.98);
     z-index: 1002;
-    padding: 72px 20px 24px;
+    padding: calc(72px + env(safe-area-inset-top, 0px)) 20px max(24px, env(safe-area-inset-bottom, 0px));
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .site-nav-drawer-list {
@@ -1302,6 +1536,7 @@ img {
     justify-content: space-between;
     gap: 10px;
     padding: 14px 4px;
+    min-height: var(--touch-min);
     color: #EEEED5;
     text-decoration: none;
     font-weight: 700;
@@ -1386,6 +1621,13 @@ img {
 
 .stats-highlights-section {
     width: 100%;
+}
+
+.result {
+    scroll-margin-top: var(--site-nav-offset);
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
 }
 
 @media (max-width: 768px) {
@@ -1522,6 +1764,12 @@ img {
     .dashboard-toolbar {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .dashboard-tool-btn,
+    .dashboard-load-btn {
+        min-height: var(--touch-min);
+        width: 100%;
     }
 }
 

@@ -8,11 +8,16 @@ const CHECKMATE_SYMBOLS = [
   'checkmate-star',
 ];
 
+function isTouchPrimaryDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
 export default function CursorEffects() {
   const reduceMotion = usePrefersReducedMotion();
 
   useEffect(() => {
-    if (reduceMotion) return;
+    if (reduceMotion || isTouchPrimaryDevice()) return;
 
     const trailElements: HTMLDivElement[] = [];
     let trailTimer: number | null = null;

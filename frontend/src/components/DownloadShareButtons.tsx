@@ -28,8 +28,10 @@ async function captureCanvas(el: HTMLElement): Promise<HTMLCanvasElement> {
   if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
     bg = '#2d6056';
   }
+  // Lower scale on narrow screens — avoids mobile OOM from html2canvas at 2x
+  const scale = typeof window !== 'undefined' && window.innerWidth < 768 ? 1.25 : 2;
   return html2canvas(el, {
-    scale: 2,
+    scale,
     useCORS: true,
     allowTaint: true,
     backgroundColor: bg,
